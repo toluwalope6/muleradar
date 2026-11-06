@@ -1,0 +1,42 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node and frontend builds
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Local data: excluded by default
+data/*
+!data/README.md
+!data/sample/
+data/sample/*
+!data/sample/.gitkeep
+
+# Original IBM dataset files anywhere in the repository
+HI-*.csv
+LI-*.csv
+HI-*_patterns.txt
+LI-*_patterns.txt
+
+# Downloaded archives
+*.zip
+*.tar
+*.gz
+
+# Logs and operating system files
+*.log
+.DS_Store
+Thumbs.db
