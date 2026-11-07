@@ -359,13 +359,17 @@ def _cache_matches(data_dir: Path) -> bool:
     """Reuse the cached sample when it was built for the same MULERADAR_DATASET choice.
 
     Keyed on what was requested, not what was built, so a synthetic fallback after a failed IBM download is
-    kept (rebuild with --force), and a sample cached before this metadata existed is kept as before.
+    kept until the IBM CSV appears locally. A sample cached before this metadata existed is kept for the
+    default IBM choice (as before) but regenerated when synthetic data is requested.
     """
+    requested = _requested_kind()
     try:
         meta = json.loads((data_dir / SAMPLE_META_FILE).read_text())
     except (OSError, ValueError):
-        return True
-    return meta.get("requested", meta.get("dataset")) == _requested_kind()
+        return requested == "ibm"
+    if meta.get("requested", meta.get("dataset")) != requested:
+        return False
+    return not (requested == "ibm" and meta.get("dataset") == "synthetic" and (data_dir / IBM_TRANS).exists())
 
 
 def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.DataFrame, list[dict] | None]:

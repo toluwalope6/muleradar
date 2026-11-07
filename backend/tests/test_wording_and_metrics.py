@@ -74,7 +74,7 @@ class Metrics(unittest.TestCase):
 
 
 class SampleCache(unittest.TestCase):
-    def _matches(self, dataset, meta):
+    def _matches(self, dataset, meta, csv_present=False):
         import json
         import tempfile
 
@@ -83,6 +83,8 @@ class SampleCache(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             if meta is not None:
                 (Path(tmp) / data.SAMPLE_META_FILE).write_text(json.dumps(meta))
+            if csv_present:
+                (Path(tmp) / data.IBM_TRANS).write_text("")
             old, data.DATASET = data.DATASET, dataset
             try:
                 return data._cache_matches(Path(tmp))
@@ -97,6 +99,13 @@ class SampleCache(unittest.TestCase):
         self.assertTrue(self._matches("ibm", {"dataset": "synthetic", "requested": "ibm"}))
         self.assertTrue(self._matches("local", {"dataset": "ibm", "requested": "ibm"}))
         self.assertTrue(self._matches("ibm", None))
+
+    def test_rebuilds_fallback_once_ibm_csv_is_available(self):
+        self.assertFalse(self._matches("local", {"dataset": "synthetic", "requested": "ibm"}, csv_present=True))
+        self.assertFalse(self._matches("ibm", {"dataset": "synthetic", "requested": "ibm"}, csv_present=True))
+
+    def test_legacy_cache_is_not_trusted_for_synthetic(self):
+        self.assertFalse(self._matches("synthetic", None))
 
 
 if __name__ == "__main__":
