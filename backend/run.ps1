@@ -13,9 +13,10 @@ Write-Host "[setup] Installing dependencies..."
 & $py -m pip install --quiet --disable-pip-version-check -r requirements.txt
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 & $py top_cases.py
-# Free port 8000 if an older backend is still running (incl. orphaned `uvicorn --reload` workers)
+# Free port 8000 if an older backend from this folder is still running (incl. orphaned `uvicorn --reload`
+# workers). Only processes whose command line contains this backend's path are stopped.
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match 'uvicorn|spawn_main' } |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($PSScriptRoot) -and $_.CommandLine -match 'uvicorn|spawn_main' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }

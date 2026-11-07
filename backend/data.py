@@ -340,12 +340,33 @@ def _finalise(df: pd.DataFrame) -> pd.DataFrame:
     return df[COLUMNS + extra]
 
 
+SAMPLE_META_FILE = "sample_meta.json"
+
+
+def sample_source(data_dir: Path = DATA_DIR) -> str | None:
+    """Which source ("ibm" or "synthetic") built the cached sample, or None if unknown."""
+    try:
+        return json.loads((data_dir / SAMPLE_META_FILE).read_text())["dataset"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _cache_matches(data_dir: Path) -> bool:
+    cached = sample_source(data_dir)
+    if DATASET == "synthetic":
+        return cached == "synthetic"
+    if cached == "ibm":
+        return True
+    # Synthetic data cached after an IBM fallback is kept while the IBM CSV still isn't available locally.
+    return cached == "synthetic" and DATASET == "local" and not (data_dir / IBM_TRANS).exists()
+
+
 def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.DataFrame, list[dict] | None]:
     """Return (transactions, ground_truth_schemes). Ground truth is None when unavailable."""
     data_dir.mkdir(parents=True, exist_ok=True)
     sample_path, gt_path = data_dir / SAMPLE_FILE, data_dir / GROUND_TRUTH_FILE
 
-    if sample_path.exists() and not force:
+    if sample_path.exists() and not force and _cache_matches(data_dir):
         df = pd.read_parquet(sample_path)
         gt = json.loads(gt_path.read_text()) if gt_path.exists() else None
         return df, gt
@@ -357,11 +378,14 @@ def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.Da
         print(f"[data] Loading IBM AML dataset from {data_dir / IBM_TRANS}")
         df, fx = load_ibm(data_dir)
         gt = parse_ibm_patterns(data_dir / IBM_PATTERNS, df, fx) if (data_dir / IBM_PATTERNS).exists() else None
+        source = "ibm"
     else:
         print("[data] Using synthetic data" + ("" if DATASET == "synthetic" else " (IBM dataset unavailable)"))
         df, gt = generate_synthetic()
+        source = "synthetic"
 
     df.to_parquet(sample_path, index=False)
+    (data_dir / SAMPLE_META_FILE).write_text(json.dumps({"dataset": source}))
     if gt is not None:
         gt_path.write_text(json.dumps(gt, indent=2))
     elif gt_path.exists():
