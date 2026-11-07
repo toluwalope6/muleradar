@@ -291,7 +291,7 @@ function caseC003(): CaseDetail {
   const ctx = tx('TX-30007', '2026-10-20T14:00:00Z', 'ACC-3001', 'ACC-3190', 1_150, 'Office rent', false);
   return finalizeCase({
     id: 'C-003',
-    title: 'One payment split across five accounts',
+    title: 'One payment passed on to five accounts',
     accounts,
     transactions: [ctx, inbound, ...outflows],
     indicators: [fanOut(outflows), indicator('rapid_pass_through', [passThroughPoint(inbound, outflows)])],

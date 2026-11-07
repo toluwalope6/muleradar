@@ -10,10 +10,19 @@ export interface StoryPoint {
   transactionIds: string[];
 }
 
+export interface AmountFact {
+  label: string;
+  value: number;
+  note: string;
+}
+
 export interface CaseStory {
   kind: StoryKind;
   headline: string;
+  /** Two short sentences. */
   whatHappened: string[];
+  /** Directional amounts (sent, returned, incoming, outgoing); never a sum of every transfer. */
+  amounts: AmountFact[];
   whyItMatters: string;
   whyReview: StoryPoint[];
 }
@@ -30,6 +39,8 @@ const byTime = (txs: Transaction[]) => [...txs].sort((a, b) => a.timestamp.local
 const sum = (txs: Transaction[]) => txs.reduce((total, t) => total + t.amount, 0);
 const ids = (txs: Transaction[]) => txs.map((t) => t.id);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const countWords = (n: number, word: string) => `${NUMBER_WORDS[n] ?? n} ${word}${n === 1 ? '' : 's'}`;
 
 export function caseFacts(c: CaseDetail): CaseFacts {
   const flaggedTransfers = byTime(c.transactions.filter((t) => t.isEvidence));
@@ -96,8 +107,8 @@ function circularStory(c: CaseDetail, hops: Transaction[]): CaseStory {
 
   const whyReview: StoryPoint[] = [
     {
-      title: 'The money came back to where it started',
-      text: `${returned} of the ${money(first.amount)} that left ${start} returned to it ${loopTime} later.`,
+      title: 'Most of the amount sent came back to where it started',
+      text: `${money(last.amount)} of the ${money(first.amount)} sent from ${start} returned to it ${loopTime} later (${returned}).`,
       transactionIds: [first.id, last.id],
     },
     {
@@ -118,13 +129,17 @@ function circularStory(c: CaseDetail, hops: Transaction[]): CaseStory {
 
   return {
     kind: 'circular',
-    headline: `${money(first.amount)} moved in a loop through ${hops.length} accounts and came back`,
+    headline: `${money(first.amount)} sent through ${countWords(hops.length, 'account')}; ${money(last.amount)} returned`,
     whatHappened: [
-      `On ${formatDateTime(first.timestamp)}, ${money(first.amount)} left account ${start}. It passed through ${plural(relays, 'other account')} in ${plural(hops.length, 'transfer')}.`,
-      `${loopTime} after it left, ${money(last.amount)} (${returned} of the original amount) arrived back at ${start}.`,
+      `${start} sent ${money(first.amount)} on ${formatDate(first.timestamp)}, and it was passed on through ${plural(relays, 'other account')}.`,
+      `${loopTime} later, ${money(last.amount)} returned to ${start}: ${returned} of the amount sent.`,
+    ],
+    amounts: [
+      { label: `Sent from ${start}`, value: first.amount, note: `First transfer in the loop (${first.id}), ${formatDateTime(first.timestamp)}` },
+      { label: `Returned to ${start}`, value: last.amount, note: `Last transfer in the loop (${last.id}), ${formatDateTime(last.timestamp)}` },
     ],
     whyItMatters:
-      'Money that travels in a loop and returns to its starting point can make the same funds look like several separate payments, so analysts review it. There may be a legitimate explanation, such as an internal settlement.',
+      'Money that returns to its starting point through other accounts can make the same funds look like several separate payments. There may be a legitimate explanation, such as an internal settlement.',
     whyReview,
   };
 }
@@ -148,28 +163,24 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
   const whatHappened: string[] = [];
   if (inflows.length > 1) {
     whatHappened.push(
-      `Account ${hub} received ${inflows.length} payments from ${plural(senders, 'different account')}, totalling ${money(inSum)}, over ${formatDuration(inflows[0].timestamp, lastIn.timestamp)} on ${formatDate(inflows[0].timestamp)}.`,
+      `${hub} received ${inflows.length} payments totalling ${money(inSum)} over ${formatDuration(inflows[0].timestamp, lastIn.timestamp)} on ${formatDate(inflows[0].timestamp)}.`,
     );
   } else if (lastIn) {
-    whatHappened.push(`Account ${hub} received ${money(lastIn.amount)} from ${lastIn.from} on ${formatDateTime(lastIn.timestamp)}.`);
+    whatHappened.push(`${hub} received ${money(lastIn.amount)} from ${lastIn.from} on ${formatDateTime(lastIn.timestamp)}.`);
   }
   if (outflows.length > 0 && onward && onwardTime) {
     whatHappened.push(
-      `Within ${onwardTime} of the ${inflows.length > 1 ? 'last incoming payment' : 'payment arriving'}, it sent ${money(outSum)} (${onward} of what came in) to ${plural(recipients, 'account')}.`,
+      `Within ${onwardTime}${inflows.length > 1 ? ' of the last one' : ''}, it sent ${money(outSum)} to ${plural(recipients, 'account')}, equal to ${onward} of the incoming amount.`,
     );
-  }
-  if (c.indicatorTypes.includes('new_account') && ageDays !== null) {
-    whatHappened.push(`${hub} had been opened only ${plural(ageDays, 'day')} before the first of these payments.`);
   }
 
   const whyReview: StoryPoint[] = [];
   if (onward && onwardTime) {
     whyReview.push({
-      title: 'Most of the money moved straight on',
-      text:
-        inflows.length > 1
-          ? `${plural(senders, 'account')} paid in ${money(inSum)}; ${onward} of it left again within ${onwardTime} of the last payment.`
-          : `${money(inSum)} arrived from ${lastIn.from}; ${onward} of it left again within ${onwardTime}.`,
+      title: 'Most of the incoming amount was paid out quickly',
+      text: `Outgoing payments of ${money(outSum)} equal ${onward} of the ${money(inSum)} received; the last one left within ${onwardTime} of the ${
+        inflows.length > 1 ? 'final incoming payment' : 'payment arriving'
+      }.`,
       transactionIds: ids([...inflows, ...outflows]),
     });
   }
@@ -200,18 +211,25 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
   }
 
   const headline =
-    inflows.length > 1
-      ? `${plural(senders, 'account')} paid into one account, which sent ${onward ?? 'the funds'} on to ${plural(recipients, 'other')}`
-      : `One ${money(inSum)} payment split across ${plural(recipients, 'account')} within ${onwardTime ?? 'hours'}`;
+    outflows.length > 0
+      ? `${money(inSum)} in from ${countWords(senders, 'account')}; ${money(outSum)} out to ${countWords(recipients, 'account')}`
+      : `${money(inSum)} in from ${countWords(senders, 'account')}`;
+  const amounts: AmountFact[] = [
+    { label: `Incoming to ${hub}`, value: inSum, note: `${plural(inflows.length, 'flagged payment')} from ${plural(senders, 'account')}` },
+  ];
+  if (outflows.length > 0) {
+    amounts.push({ label: `Outgoing from ${hub}`, value: outSum, note: `${plural(outflows.length, 'flagged payment')} to ${plural(recipients, 'account')}` });
+  }
 
   return {
     kind: 'collect-distribute',
     headline,
     whatHappened,
+    amounts,
     whyItMatters:
       inflows.length > 1
-        ? 'Collecting money from several accounts and quickly sending most of it on is a pattern analysts review, because an account can be used to pass on other people’s funds. It can also have ordinary explanations, so it needs a human look.'
-        : 'Receiving one large payment and quickly dividing it between several accounts is a pattern analysts review, because it can be used to break funds into smaller amounts. It can also have ordinary explanations, such as paying contractors.',
+        ? 'An account that collects from several accounts and quickly pays most of it out can be passing on other people’s funds. It can also have ordinary explanations.'
+        : 'Quickly dividing one large payment between several accounts can be a way to break funds into smaller amounts. It can also have ordinary explanations, such as paying contractors.',
     whyReview: whyReview.slice(0, 3),
   };
 }
@@ -225,7 +243,8 @@ export function buildCaseStory(c: CaseDetail): CaseStory {
   return {
     kind: 'other',
     headline: c.title,
-    whatHappened: c.indicators.flatMap((i) => i.points.slice(0, 1).map((p) => p.text)),
+    whatHappened: c.indicators.slice(0, 2).flatMap((i) => i.points.slice(0, 1).map((p) => p.text)),
+    amounts: [],
     whyItMatters: 'These transfers matched sample review rules. Matching a rule is a reason to look closer, not proof of wrongdoing.',
     whyReview: c.indicators.slice(0, 3).map((i) => ({
       title: i.title,

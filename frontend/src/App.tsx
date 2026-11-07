@@ -6,7 +6,7 @@ import { buildCaseStory } from './lib/caseStory';
 import type { Selection } from './lib/selection';
 import { CaseList } from './components/CaseList';
 import { CaseGraph } from './components/CaseGraph';
-import { CaseOverview } from './components/CaseOverview';
+import { CaseHeader, CaseReview } from './components/CaseOverview';
 import { DetailsPanel } from './components/DetailsPanel';
 import { ReportModal } from './components/ReportModal';
 import { TransactionTable } from './components/TransactionTable';
@@ -132,7 +132,7 @@ export default function App() {
           )}
           {detail && story && caseState.status === 'success' && (
             <>
-              <CaseOverview caseDetail={detail} story={story} selection={selection} onSelect={select} onOpenReport={openReport} />
+              <CaseHeader caseDetail={detail} story={story} onOpenReport={openReport} />
 
               <section id="follow-the-money" className="graph-section">
                 <h2>Follow the money</h2>
@@ -145,6 +145,8 @@ export default function App() {
                   detailsPanel={selection && <DetailsPanel caseDetail={detail} selection={selection} onSelect={select} />}
                 />
               </section>
+
+              <CaseReview caseDetail={detail} story={story} selection={selection} onSelect={select} />
 
               <TransactionTable caseDetail={detail} selection={selection} onSelect={selectFromTable} />
             </>

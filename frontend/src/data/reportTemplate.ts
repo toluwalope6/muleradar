@@ -2,11 +2,13 @@
 import type { CaseDetail, DraftReport } from './types';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { ROLE_LABELS } from '../lib/indicators';
+import { buildCaseStory } from '../lib/caseStory';
 
 export function buildDraftReport(c: CaseDetail): DraftReport {
   const evidence = c.transactions.filter((t) => t.isEvidence);
   const money = (n: number) => formatMoney(n, c.currency);
   const patternAccounts = c.accounts.filter((a) => a.role !== 'context');
+  const story = buildCaseStory(c);
 
   return {
     caseId: c.id,
@@ -18,7 +20,9 @@ export function buildDraftReport(c: CaseDetail): DraftReport {
         heading: '1. Case overview',
         paragraphs: [
           `Case ${c.id} (“${c.title}”) was surfaced by the sample detection rules on synthetic demo data with a review priority score of ${c.priorityScore}/100 (${c.priority}). The score ranks cases for review using sample rule weights; it is not a probability of wrongdoing.`,
-          `It involves ${c.accountCount} flagged accounts and ${c.evidenceTransactionCount} flagged transfers (total across flagged transfers: ${money(c.evidenceVolume)}; funds that pass through several accounts are counted at each step), between ${formatDateTime(c.windowStart)} and ${formatDateTime(c.windowEnd)}.`,
+          `It involves ${c.accountCount} flagged accounts and ${c.evidenceTransactionCount} flagged transfers between ${formatDateTime(c.windowStart)} and ${formatDateTime(c.windowEnd)}.`,
+          ...story.amounts.map((a) => `• ${a.label}: ${money(a.value)} (${a.note}).`),
+          `Total across flagged transfers: ${money(c.evidenceVolume)}. This adds up every flagged transfer, so funds that pass through several accounts are counted at each step; it is not the amount of unique money involved or money lost.`,
         ],
       },
       {

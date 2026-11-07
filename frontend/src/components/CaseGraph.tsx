@@ -63,14 +63,14 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
             label: 'data(label)',
             'text-wrap': 'wrap',
             'text-justification': 'center',
-            color: '#dbe4f0',
-            'font-size': 12,
+            color: '#f1f5fb',
+            'font-size': 14,
             'font-family': FONT,
             'font-weight': 600,
-            'line-height': 1.25,
+            'line-height': 1.3,
             'text-background-color': '#0b1426',
             'text-background-opacity': 0.92,
-            'text-background-padding': '3px',
+            'text-background-padding': '4px',
             'text-background-shape': 'roundrectangle',
             width: 30,
             height: 30,
@@ -82,7 +82,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
         { selector: 'node.hub', style: { 'background-color': COLORS.hubNode, width: 36, height: 36 } },
         {
           selector: 'node.context',
-          style: { 'background-color': '#1e293b', 'border-color': COLORS.contextNode, 'border-style': 'dashed', 'border-width': 2, color: '#94a3b8' },
+          style: { 'background-color': '#1e293b', 'border-color': COLORS.contextNode, 'border-style': 'dashed', 'border-width': 2, color: '#c3cede' },
         },
         { selector: 'node.label-top', style: { 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': -8 } },
         { selector: 'node.label-bottom', style: { 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8 } },
@@ -97,7 +97,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
             'target-arrow-shape': 'triangle',
             'arrow-scale': 1.6,
             'curve-style': 'bezier',
-            'font-size': 12,
+            'font-size': 14,
             'font-family': FONT,
             'font-weight': 600,
             color: '#f1f5f9',
@@ -112,11 +112,20 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
         },
         {
           selector: 'edge.context',
-          style: { 'line-style': 'dashed', 'line-color': COLORS.contextEdge, 'target-arrow-color': COLORS.contextEdge, color: '#cbd5e1' },
+          style: { 'line-style': 'dashed', 'line-color': COLORS.contextEdge, 'target-arrow-color': COLORS.contextEdge, color: '#e2e8f0' },
         },
-        { selector: 'edge.show-amount, edge.hovered, edge.focused, edge.related', style: { label: 'data(amountLabel)' } },
+        { selector: 'edge.show-amount, edge.hovered, edge.focused', style: { label: 'data(amountLabel)' } },
+        // Amounts on a selected account's transfers sit near the far end, where the edges fan apart.
+        {
+          selector: 'edge.related-in',
+          style: { 'source-label': 'data(amountLabel)', 'source-text-offset': 64, 'source-text-rotation': 'autorotate' },
+        },
+        {
+          selector: 'edge.related-out',
+          style: { 'target-label': 'data(amountLabel)', 'target-text-offset': 64, 'target-text-rotation': 'autorotate' },
+        },
         { selector: 'edge.hovered', style: { 'line-color': '#5eead4', 'target-arrow-color': '#5eead4', 'z-index': 9 } },
-        { selector: '.dimmed', style: { opacity: 0.18 } },
+        { selector: '.dimmed', style: { opacity: 0.25 } },
         { selector: 'node.focused', style: { 'border-color': '#f8fafc', 'border-width': 4, 'border-style': 'solid' } },
         { selector: 'edge.focused', style: { 'line-color': '#99f6e4', 'target-arrow-color': '#99f6e4', 'z-index': 10 } },
         { selector: 'edge.related', style: { 'line-color': '#5eead4', 'target-arrow-color': '#5eead4' } },
@@ -149,7 +158,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    cy.elements().removeClass('focused related dimmed');
+    cy.elements().removeClass('focused related related-in related-out dimmed');
     if (!selection) return;
     const el = cy.getElementById(selection.id);
     if (el.empty()) return;
@@ -157,7 +166,11 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
       selection.kind === 'account' ? el.closedNeighborhood() : el.union(cy.$id(selection.id).connectedNodes());
     cy.elements().not(neighbourhood).addClass('dimmed');
     el.addClass('focused');
-    if (selection.kind === 'account') el.connectedEdges().addClass('related');
+    if (selection.kind === 'account') {
+      const edges = el.connectedEdges().addClass('related').not('.show-amount');
+      edges.filter(`[target = "${selection.id}"]`).addClass('related-in');
+      edges.filter(`[source = "${selection.id}"]`).addClass('related-out');
+    }
   }, [selection, caseDetail, showContext]);
 
   // The canvas narrows while the details panel is open; refit so nothing hides behind it.
