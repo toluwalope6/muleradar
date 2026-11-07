@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CaseDetail, DraftReport } from '../data/types';
 import type { AsyncState } from '../lib/async';
 import { formatDateTime, formatMoney } from '../lib/format';
@@ -33,14 +33,38 @@ function reportAsText(report: DraftReport, c: CaseDetail): string {
 export function ReportModal({ caseDetail, state, onGenerate, onClose }: Props) {
   const [copied, setCopied] = useState(false);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
+    const opener = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
     document.body.classList.add('modal-open');
     return () => {
-      window.removeEventListener('keydown', onKey);
       document.body.classList.remove('modal-open');
+      opener?.focus();
     };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return onClose();
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const inside = dialogRef.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   const report = state.status === 'success' ? state.data : null;
@@ -73,7 +97,7 @@ export function ReportModal({ caseDetail, state, onGenerate, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label="Draft report" onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label="Draft report" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <div>
             <p className="eyebrow">Case {caseDetail.id}</p>
@@ -93,7 +117,7 @@ export function ReportModal({ caseDetail, state, onGenerate, onClose }: Props) {
                 </button>
               </>
             )}
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button ref={closeRef} type="button" className="btn btn-secondary" onClick={onClose}>
               Close
             </button>
           </div>
