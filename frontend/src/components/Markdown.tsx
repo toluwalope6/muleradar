@@ -50,7 +50,7 @@ export function Markdown({ source }: { source: string }) {
       out.push(ordered ? <ol key={i}>{list}</ol> : <ul key={i}>{list}</ul>);
     } else {
       const para: string[] = [];
-      while (i < lines.length && lines[i].trim() && !/^(#|\||\s*([-*]|\d+\.) )/.test(lines[i])) para.push(lines[i++].trim());
+      while (i < lines.length && lines[i].trim() && !/^(#{1,6} |\s*\||\s*([-*]|\d+\.) )/.test(lines[i])) para.push(lines[i++].trim());
       out.push(<p key={i}>{inline(para.join(' '))}</p>);
     }
   }
