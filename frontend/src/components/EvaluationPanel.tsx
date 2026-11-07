@@ -17,10 +17,22 @@ interface Metric {
 /** A metric is shown only when the backend returns its counts and they reproduce the reported value. */
 function verified(m: Metric): m is Metric & { numerator: number; denominator: number } {
   if (m.numerator === undefined || m.denominator === undefined || m.denominator === 0) return false;
-  return Math.abs(m.numerator / m.denominator - m.reported) < 0.0005;
+  // The backend rounds to 3 decimals (half-to-even), so a correct value can be off by exactly 0.0005.
+  return Math.abs(m.numerator / m.denominator - m.reported) <= 0.0005 + 1e-9;
 }
 
 function MetricRow({ m }: { m: Metric }) {
+  if (m.denominator === 0) {
+    return (
+      <div className="eval-metric">
+        <div className="eval-head">
+          <dt>{m.label}</dt>
+          <dd className="muted">Not measured</dd>
+        </div>
+        <p className="eval-def">There is nothing to measure it against (denominator is 0).</p>
+      </div>
+    );
+  }
   if (!verified(m)) {
     return (
       <div className="eval-metric">
