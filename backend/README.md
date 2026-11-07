@@ -8,6 +8,17 @@ itself against ground truth.
 
 ## Run
 
+**One command** (creates the venv, installs deps, downloads the data on first run, starts the API):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\run.ps1     # Windows
+```
+```bash
+./backend/run.sh                                              # macOS / Linux
+```
+
+Manual equivalent:
+
 ```bash
 cd backend
 python3.11 -m venv .venv && source .venv/bin/activate
@@ -19,16 +30,24 @@ python top_cases.py             # print top 10 cases + metrics
 uvicorn main:app --reload       # API on http://localhost:8000 (docs at /docs)
 ```
 
-The first startup builds the dataset and runs detection (a few seconds on synthetic data); results are cached
-in memory so every request is fast. Delete `../data/sample.parquet` (or run `python data.py --force`) to rebuild.
+The first run downloads the IBM HI-Small files (~450MB, public, no Kaggle login) and builds a ~45k-row
+sample (~1 min); after that `../data/sample.parquet` is reused and startup takes ~10s. Run
+`python data.py --force` to rebuild.
 
 ## Data (`data.py`)
 
-Data lives in `../data` (override with `MULERADAR_DATA_DIR`).
+Data lives in `../data` (override with `MULERADAR_DATA_DIR`). `MULERADAR_DATASET` picks the source:
 
-- **IBM AML dataset**: if `data/HI-Small_Trans.csv` exists, a ~50k-row sample is built with *all*
-  `Is Laundering = 1` rows plus random normal rows. Accounts are `"<bank>_<account>"`. If
-  `data/HI-Small_Patterns.txt` exists it's parsed into ground-truth schemes.
+| value | behaviour |
+|---|---|
+| `ibm` (default) | use `data/HI-Small_Trans.csv`; download it from Kaggle via `kagglehub` if missing; synthetic if that fails |
+| `local` | use the IBM CSV only if it is already in `data/`, never download |
+| `synthetic` | always generate synthetic data |
+
+- **IBM AML dataset**: a ~50k-row sample with *all* `Is Laundering = 1` rows plus random normal rows.
+  Accounts are `"<bank>_<account>"`. Amounts are converted to USD with exchange rates inferred from the
+  dataset's own cross-currency transfers (IBM amounts are in the payer's currency, which otherwise breaks
+  amount-matching). `HI-Small_Patterns.txt` is parsed into ground-truth schemes.
 - **Synthetic fallback**: 2,000 accounts, ~40k normal transactions over 30 days (plus legitimate payroll and
   rent-collection bursts as realistic false-positive bait) and 15 injected schemes: CYCLE, FAN-IN, FAN-OUT,
   SCATTER-GATHER, GATHER-SCATTER, STACK. Ground truth goes to `data/ground_truth.json`.
@@ -39,13 +58,14 @@ Output schema (`data/sample.parquet`): `tx_id, timestamp, from_account, to_accou
 
 | Detector | Rule |
 |---|---|
-| cycle | `nx.simple_cycles(length_bound=6)` on 72h sliding windows, length 3-6, hops must be time-ordered and keep 80-105% of the previous amount |
+| cycle | `nx.simple_cycles(length_bound=6)` on 96h sliding windows, length 3-6, hops must be time-ordered and keep 80-105% of the previous amount |
 | fan-in / fan-out | 5+ distinct counterparties within 24h moving at least 5,000 |
 | pass-through | inflow of at least 5,000 with 80-105% sent on within 48h |
 
 Hits that share a flagged account or an evidence transaction are merged into a case. Each case gets:
 - a **risk score** (0-100) built from the detectors that fired, the amount, structuring (8-10k transfers) and speed
-- a **scheme type** from the graph shape (cycle, sources, sinks, intermediaries, longest path)
+- **context enrichment**: transfers between case accounts and with counterparties shared by 2+ case accounts (closes cycles, finds the scatter source)
+- a **scheme type** from the graph shape (loops, fan-in/fan-out hubs and their order, longest path)
 - **roles** (source / mule / destination) and an ordered **timeline** with one-line descriptions
 - a **ground-truth match** by account Jaccard (counts as found when it's at least 0.3)
 

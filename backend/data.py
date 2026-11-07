@@ -9,14 +9,21 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("MULERADAR_DATA_DIR", REPO_ROOT / "data"))
 
+# ibm (default): use/download the IBM HI-Small dataset, falling back to synthetic if unavailable
+# local: use the IBM CSV only if it is already in data/;  synthetic: always generate synthetic data
+DATASET = os.getenv("MULERADAR_DATASET", "ibm").lower()
 IBM_TRANS = "HI-Small_Trans.csv"
 IBM_PATTERNS = "HI-Small_Patterns.txt"
 SAMPLE_FILE = "sample.parquet"
@@ -33,13 +40,48 @@ def _ibm_account(bank, account) -> str:
     return f"{str(bank).strip()}_{str(account).strip()}"
 
 
-def load_ibm(data_dir: Path, sample_size: int = SAMPLE_SIZE, seed: int = 42) -> pd.DataFrame:
-    """Keep every laundering row plus a uniform random sample of normal rows (bottom-k over chunks)."""
+KAGGLE_DATASET = "ealtman2019/ibm-transactions-for-anti-money-laundering-aml"
+# Fallback USD rates if the CSV has too few cross-currency rows to infer them
+FX_FALLBACK = {
+    "US Dollar": 1.0, "Euro": 1.17, "UK Pound": 1.29, "Swiss Franc": 1.09, "Yuan": 0.149, "Yen": 0.0095,
+    "Rupee": 0.0136, "Ruble": 0.0129, "Canadian Dollar": 0.758, "Australian Dollar": 0.708,
+    "Mexican Peso": 0.0473, "Brazil Real": 0.177, "Shekel": 0.296, "Saudi Riyal": 0.267, "Bitcoin": 11_880.0,
+}
+
+
+def download_ibm(data_dir: Path) -> bool:
+    """Fetch HI-Small_Trans.csv + HI-Small_Patterns.txt from Kaggle (public, no login needed)."""
+    try:
+        import shutil
+        import kagglehub
+    except ImportError:
+        print("[data] kagglehub not installed, skipping IBM download")
+        return False
+    try:
+        for name in (IBM_PATTERNS, IBM_TRANS):
+            print(f"[data] Downloading {name} from Kaggle ({KAGGLE_DATASET})...")
+            src = kagglehub.dataset_download(KAGGLE_DATASET, path=name)
+            shutil.copyfile(src, data_dir / name)
+        return True
+    except Exception as exc:  # offline, Kaggle down, rate limited...
+        print(f"[data] IBM download failed ({exc.__class__.__name__}: {exc})")
+        (data_dir / IBM_TRANS).unlink(missing_ok=True)
+        return False
+
+
+def load_ibm(data_dir: Path, sample_size: int = SAMPLE_SIZE, seed: int = 42) -> tuple[pd.DataFrame, dict]:
+    """Keep every laundering row plus a uniform random sample of normal rows (bottom-k over chunks).
+
+    IBM amounts are in the payer's currency, so everything is converted to USD using rates
+    inferred from the dataset's own cross-currency transfers.
+    """
     rng = np.random.default_rng(seed)
-    laundering, normal = [], pd.DataFrame()
+    laundering, normal, fx_rows = [], pd.DataFrame(), []
     for chunk in pd.read_csv(data_dir / IBM_TRANS, dtype=str, chunksize=500_000):
         # Columns: Timestamp, From Bank, Account, To Bank, Account.1, Amount Received,
         # Receiving Currency, Amount Paid, Payment Currency, Payment Format, Is Laundering
+        cross = chunk[(chunk["Receiving Currency"] == "US Dollar") & (chunk["Payment Currency"] != "US Dollar")]
+        fx_rows.append(cross[["Payment Currency", "Amount Received", "Amount Paid"]])
         is_bad = chunk["Is Laundering"].astype(int) == 1
         laundering.append(chunk[is_bad])
         norm = chunk[~is_bad].assign(_key=rng.random(int((~is_bad).sum())))
@@ -49,28 +91,36 @@ def load_ibm(data_dir: Path, sample_size: int = SAMPLE_SIZE, seed: int = 42) -> 
     sample = pd.concat([laundering, normal.nsmallest(n_normal, "_key").drop(columns="_key")])
     sample["Is Laundering"] = sample["Is Laundering"].astype(int)
 
+    fx = dict(FX_FALLBACK)
+    cross = pd.concat(fx_rows)
+    if not cross.empty:
+        ratio = cross["Amount Received"].astype(float) / cross["Amount Paid"].astype(float)
+        stats = ratio.groupby(cross["Payment Currency"]).agg(["median", "count"])
+        fx.update({c: float(r["median"]) for c, r in stats.iterrows() if r["count"] >= 10})
+
+    paid = sample["Amount Paid"].astype(float)
     df = pd.DataFrame({
         "timestamp": pd.to_datetime(sample["Timestamp"], format="%Y/%m/%d %H:%M"),
         "from_account": [_ibm_account(b, a) for b, a in zip(sample["From Bank"], sample["Account"])],
         "to_account": [_ibm_account(b, a) for b, a in zip(sample["To Bank"], sample["Account.1"])],
-        "amount": sample["Amount Paid"].astype(float).round(2),
-        "currency": sample["Payment Currency"].astype(str),
+        "amount": (paid * sample["Payment Currency"].map(fx).fillna(1.0)).round(2),
+        "currency": "USD",
         "is_laundering": sample["Is Laundering"].astype(int),
     })
     df = df[df["from_account"] != df["to_account"]]
-    return _finalise(df)
+    return _finalise(df), fx
 
 
 _BEGIN_RE = re.compile(r"BEGIN LAUNDERING ATTEMPT\s*-\s*([A-Z\-]+)")
 
 
-def parse_ibm_patterns(path: Path, df: pd.DataFrame) -> list[dict]:
+def parse_ibm_patterns(path: Path, df: pd.DataFrame, fx: dict | None = None) -> list[dict]:
     """Parse HI-Small_Patterns.txt into ground-truth schemes and link them to sample tx_ids."""
-    key_to_tx = {
-        (ts, f, t, round(a, 2)): tx
-        for tx, ts, f, t, a in zip(df["tx_id"], df["timestamp"].dt.strftime("%Y/%m/%d %H:%M"),
-                                   df["from_account"], df["to_account"], df["amount"])
-    }
+    fx = fx or FX_FALLBACK
+    key_to_tx: dict[tuple, list[tuple[float, str]]] = defaultdict(list)
+    for tx, ts, f, t, a in zip(df["tx_id"], df["timestamp"].dt.strftime("%Y/%m/%d %H:%M"),
+                               df["from_account"], df["to_account"], df["amount"]):
+        key_to_tx[(ts, f, t)].append((a, tx))
     schemes: list[dict] = []
     current = None
     with open(path) as fh:
@@ -94,9 +144,10 @@ def parse_ibm_patterns(path: Path, df: pd.DataFrame) -> list[dict]:
                 continue
             src, dst = _ibm_account(parts[1], parts[2]), _ibm_account(parts[3], parts[4])
             current["accounts"].update([src, dst])
-            tx = key_to_tx.get((parts[0], src, dst, round(float(parts[7]), 2)))
-            if tx is not None:
-                current["transactions"].append(tx)
+            usd = float(parts[7]) * fx.get(parts[8], 1.0)
+            options = [(abs(a - usd), tx) for a, tx in key_to_tx.get((parts[0], src, dst), [])]
+            if options and min(options)[0] <= 0.01 * usd + 0.01:
+                current["transactions"].append(min(options)[1])
     return [
         {"scheme_id": f"GT{i + 1:04d}", "type": s["type"], "accounts": sorted(s["accounts"]),
          "transactions": s["transactions"]}
@@ -299,12 +350,15 @@ def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.Da
         gt = json.loads(gt_path.read_text()) if gt_path.exists() else None
         return df, gt
 
-    if (data_dir / IBM_TRANS).exists():
+    want_ibm = DATASET != "synthetic"
+    if want_ibm and not (data_dir / IBM_TRANS).exists() and DATASET != "local":
+        download_ibm(data_dir)
+    if want_ibm and (data_dir / IBM_TRANS).exists():
         print(f"[data] Loading IBM AML dataset from {data_dir / IBM_TRANS}")
-        df = load_ibm(data_dir)
-        gt = parse_ibm_patterns(data_dir / IBM_PATTERNS, df) if (data_dir / IBM_PATTERNS).exists() else None
+        df, fx = load_ibm(data_dir)
+        gt = parse_ibm_patterns(data_dir / IBM_PATTERNS, df, fx) if (data_dir / IBM_PATTERNS).exists() else None
     else:
-        print("[data] IBM dataset not found, generating synthetic data")
+        print("[data] Using synthetic data" + ("" if DATASET == "synthetic" else " (IBM dataset unavailable)"))
         df, gt = generate_synthetic()
 
     df.to_parquet(sample_path, index=False)

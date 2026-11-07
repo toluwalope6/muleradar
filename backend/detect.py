@@ -15,7 +15,8 @@ import pandas as pd
 
 # Detector parameters
 CYCLE_MIN_LEN, CYCLE_MAX_LEN = 3, 6
-CYCLE_WINDOW = pd.Timedelta(hours=72)
+CYCLE_WINDOW = pd.Timedelta(hours=96)
+CLASSIFY_CYCLE_MAX_LEN = 12  # a reconstructed case can reveal longer loops than the detector searches for
 CYCLE_WINDOW_STEP = pd.Timedelta(hours=24)
 CYCLE_AMOUNT_RETENTION = (0.80, 1.05)  # each hop keeps 80-105% of the previous hop's amount
 CYCLE_MIN_AMOUNT = 1_000.0  # only material transfers are followed around a cycle
@@ -28,6 +29,8 @@ PASS_RATIO = (0.80, 1.05)
 PASS_MIN_AMOUNT = 5_000.0
 PASS_MATERIAL_SHARE = 0.10  # ignore tx smaller than 10% of the inflow when building evidence
 MIN_CASE_RISK = 40
+ENRICH_WINDOW = pd.Timedelta(hours=48)  # context added around a case when reconstructing it
+ENRICH_MATERIAL_SHARE = 0.10
 MATCH_THRESHOLD = 0.3  # Jaccard needed for a case to count as finding a ground-truth scheme
 STRUCTURING_BAND = (8_000, 10_000)
 
@@ -239,24 +242,25 @@ def classify(tx: pd.DataFrame, hits: list[Hit]) -> str:
     detectors = Counter(h.detector for h in hits)
     g = nx.DiGraph()
     g.add_edges_from(zip(tx["from_account"], tx["to_account"]))
-    if detectors["cycle"] or not nx.is_directed_acyclic_graph(g):
+    if detectors["cycle"] or any(len(c) >= CYCLE_MIN_LEN for c in nx.simple_cycles(g, length_bound=CLASSIFY_CYCLE_MAX_LEN)):
         return "CYCLE"
-    sources = [n for n in g if g.in_degree(n) == 0]
-    sinks = [n for n in g if g.out_degree(n) == 0]
-    inter = [n for n in g if g.in_degree(n) > 0 and g.out_degree(n) > 0]
-    if not inter:
-        if len(sinks) == 1 and len(sources) > 1:
-            return "FAN-IN"
-        if len(sources) == 1 and len(sinks) > 1:
-            return "FAN-OUT"
-        return "FAN-IN" if detectors["fan_in"] >= detectors["fan_out"] else "FAN-OUT"
-    if len(inter) == 1 and g.in_degree(inter[0]) >= 3 and g.out_degree(inter[0]) >= 3:
+    ins, outs = dict(g.in_degree()), dict(g.out_degree())
+    in_hubs = [n for n in g if ins[n] >= 3]
+    out_hubs = [n for n in g if outs[n] >= 3]
+    longest = len(nx.dag_longest_path(g)) if nx.is_directed_acyclic_graph(g) else 0
+    if any(ins[n] >= 3 and outs[n] >= 3 for n in g):
+        return "GATHER-SCATTER"  # one hub collects from many and pays out to many
+    if in_hubs and out_hubs:
+        if any(nx.has_path(g, s, d) for s in out_hubs for d in in_hubs):
+            return "STACK" if longest >= 4 else "SCATTER-GATHER"  # fan out to mules, then re-collect
         return "GATHER-SCATTER"
-    if len(nx.dag_longest_path(g)) >= 4:
+    if in_hubs:
+        return "STACK" if longest >= 4 else "FAN-IN"
+    if out_hubs:
+        return "STACK" if longest >= 4 else "FAN-OUT"
+    if longest >= 3:
         return "STACK"
-    if len(sources) <= 2 and len(sinks) <= 2:
-        return "SCATTER-GATHER"
-    return "GATHER-SCATTER" if len(sources) > len(sinks) else "SCATTER-GATHER"
+    return "FAN-IN" if detectors["fan_in"] >= detectors["fan_out"] else "FAN-OUT"
 
 
 def assign_roles(tx: pd.DataFrame, scheme_type: str) -> dict[str, str]:
@@ -315,9 +319,33 @@ def build_timeline(tx: pd.DataFrame, roles: dict[str, str], scheme_type: str) ->
     return steps
 
 
-def build_case(case_id: str, hits: list[Hit], df_by_tx: pd.DataFrame) -> Case:
-    tx_ids = sorted({t for h in hits for t in h.tx_ids})
-    tx = df_by_tx.loc[tx_ids].reset_index()
+def enrich(tx_ids: set[str], df: pd.DataFrame, df_by_tx: pd.DataFrame) -> set[str]:
+    """Add the context needed to reconstruct the scheme around the detector evidence:
+    transfers between case accounts (e.g. the hop that closes a cycle) and transfers with a
+    counterparty that deals with 2+ case accounts (e.g. the source that scattered to the mules)."""
+    tx = df_by_tx.loc[sorted(tx_ids)]
+    accts = set(tx["from_account"]) | set(tx["to_account"])
+    t0, t1 = tx["timestamp"].min() - ENRICH_WINDOW, tx["timestamp"].max() + ENRICH_WINDOW
+    floor = ENRICH_MATERIAL_SHARE * tx["amount"].median()
+    lo, hi = df["timestamp"].searchsorted([t0, t1], side="left")
+    win = df.iloc[lo:hi]
+    win = win[(win["amount"] >= floor) & (win["from_account"].isin(accts) | win["to_account"].isin(accts))]
+    internal = win["from_account"].isin(accts) & win["to_account"].isin(accts)
+    cp = win.loc[~internal, "from_account"].where(win.loc[~internal, "to_account"].isin(accts),
+                                                  win.loc[~internal, "to_account"])
+    links = pd.DataFrame({"cp": cp, "case_acct": win.loc[~internal, "to_account"].where(
+        win.loc[~internal, "to_account"].isin(accts), win.loc[~internal, "from_account"])})
+    shared = set(links.groupby("cp")["case_acct"].nunique().loc[lambda n: n >= 2].index)
+    keep = internal.to_numpy().copy()
+    keep[~keep] = cp.isin(shared).to_numpy()
+    return tx_ids | set(win.loc[keep, "tx_id"])
+
+
+def build_case(case_id: str, hits: list[Hit], df_by_tx: pd.DataFrame, df: pd.DataFrame | None = None) -> Case:
+    tx_ids = {t for h in hits for t in h.tx_ids}
+    if df is not None:
+        tx_ids = enrich(tx_ids, df, df_by_tx)
+    tx = df_by_tx.loc[sorted(tx_ids)].reset_index()
     case = Case(id=case_id, hits=hits, tx=tx)
     case.scheme_type = classify(tx, hits)
     case.risk_score = risk_score(tx, hits)
@@ -400,7 +428,7 @@ def run_detection(df: pd.DataFrame, ground_truth: list[dict] | None) -> Results:
     df = df.sort_values("timestamp", kind="stable").reset_index(drop=True)
     hits = [h for detector in DETECTORS for h in detector(df)]
     df_by_tx = df.set_index("tx_id")
-    candidates = [build_case("", group, df_by_tx) for group in group_hits(hits)]
+    candidates = [build_case("", group, df_by_tx, df) for group in group_hits(hits)]
     cases = sorted((c for c in candidates if c.risk_score >= MIN_CASE_RISK),
                    key=lambda c: (-c.risk_score, -c.tx["amount"].sum()))
     for i, c in enumerate(cases, start=1):
