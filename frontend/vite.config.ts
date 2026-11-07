@@ -3,8 +3,18 @@ import react from '@vitejs/plugin-react';
 
 declare const process: { env: Record<string, string | undefined>; cwd(): string };
 
-// Only the endpoints the dashboard uses are forwarded (list, detail, report); anything else gets a 404.
-const PROXIED_PATHS = [/^\/api\/cases\/?$/, /^\/api\/cases\/[^/]+\/?$/, /^\/api\/cases\/[^/]+\/report\/?$/];
+// Only the endpoints the dashboard uses are forwarded (metrics, list, detail, report); anything else gets a 404.
+const PROXIED_PATHS = [/^\/api\/metrics\/?$/, /^\/api\/cases\/?$/, /^\/api\/cases\/[^/]+\/?$/, /^\/api\/cases\/[^/]+\/report\/?$/];
+
+// Matches on the decoded path so an encoded slash (e.g. C001%2Fask) can't reach another endpoint.
+function isProxied(url: string): boolean {
+  try {
+    const path = decodeURIComponent(url.split('?')[0]);
+    return PROXIED_PATHS.some((p) => p.test(path));
+  } catch {
+    return false;
+  }
+}
 
 // Requests to /api are proxied to the backend, so the browser stays same-origin and needs no CORS.
 function apiProxy(target: string): Record<string, ProxyOptions> {
@@ -13,7 +23,7 @@ function apiProxy(target: string): Record<string, ProxyOptions> {
       target,
       changeOrigin: true,
       rewrite: (path) => path.replace(/^\/api/, ''),
-      bypass: (req) => (PROXIED_PATHS.some((p) => p.test((req.url ?? '').split('?')[0])) ? undefined : false),
+      bypass: (req) => (isProxied(req.url ?? '') ? undefined : false),
     },
   };
 }
