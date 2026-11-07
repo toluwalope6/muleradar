@@ -67,8 +67,9 @@ def get_case(case_id: str):
 
 @app.get("/metrics")
 def metrics():
+    results = get_results()  # builds the sample (and its metadata) on first use
     meta = sample_meta()
-    return {**get_results().metrics, "dataset": meta["dataset"], "dataset_requested": meta["requested"]}
+    return {**results.metrics, "dataset": meta["dataset"], "dataset_requested": meta["requested"]}
 
 
 @app.post("/cases/{case_id}/ask")
