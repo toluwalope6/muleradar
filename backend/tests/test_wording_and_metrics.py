@@ -73,5 +73,31 @@ class Metrics(unittest.TestCase):
         self.assertEqual(m["laundering_in_schemes"], 3)
 
 
+class SampleCache(unittest.TestCase):
+    def _matches(self, dataset, meta):
+        import json
+        import tempfile
+
+        import data
+
+        with tempfile.TemporaryDirectory() as tmp:
+            if meta is not None:
+                (Path(tmp) / data.SAMPLE_META_FILE).write_text(json.dumps(meta))
+            old, data.DATASET = data.DATASET, dataset
+            try:
+                return data._cache_matches(Path(tmp))
+            finally:
+                data.DATASET = old
+
+    def test_rebuilds_when_the_requested_dataset_changes(self):
+        self.assertFalse(self._matches("ibm", {"dataset": "synthetic", "requested": "synthetic"}))
+        self.assertFalse(self._matches("synthetic", {"dataset": "ibm", "requested": "ibm"}))
+
+    def test_keeps_synthetic_fallback_and_legacy_cache(self):
+        self.assertTrue(self._matches("ibm", {"dataset": "synthetic", "requested": "ibm"}))
+        self.assertTrue(self._matches("local", {"dataset": "ibm", "requested": "ibm"}))
+        self.assertTrue(self._matches("ibm", None))
+
+
 if __name__ == "__main__":
     unittest.main()

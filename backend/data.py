@@ -351,14 +351,21 @@ def sample_source(data_dir: Path = DATA_DIR) -> str | None:
         return None
 
 
+def _requested_kind() -> str:
+    return "synthetic" if DATASET == "synthetic" else "ibm"
+
+
 def _cache_matches(data_dir: Path) -> bool:
-    cached = sample_source(data_dir)
-    if DATASET == "synthetic":
-        return cached == "synthetic"
-    if cached == "ibm":
+    """Reuse the cached sample when it was built for the same MULERADAR_DATASET choice.
+
+    Keyed on what was requested, not what was built, so a synthetic fallback after a failed IBM download is
+    kept (rebuild with --force), and a sample cached before this metadata existed is kept as before.
+    """
+    try:
+        meta = json.loads((data_dir / SAMPLE_META_FILE).read_text())
+    except (OSError, ValueError):
         return True
-    # Synthetic data cached after an IBM fallback is kept while the IBM CSV still isn't available locally.
-    return cached == "synthetic" and DATASET == "local" and not (data_dir / IBM_TRANS).exists()
+    return meta.get("requested", meta.get("dataset")) == _requested_kind()
 
 
 def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.DataFrame, list[dict] | None]:
@@ -385,7 +392,7 @@ def build_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> tuple[pd.Da
         source = "synthetic"
 
     df.to_parquet(sample_path, index=False)
-    (data_dir / SAMPLE_META_FILE).write_text(json.dumps({"dataset": source}))
+    (data_dir / SAMPLE_META_FILE).write_text(json.dumps({"dataset": source, "requested": _requested_kind()}))
     if gt is not None:
         gt_path.write_text(json.dumps(gt, indent=2))
     elif gt_path.exists():
