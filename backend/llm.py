@@ -15,7 +15,8 @@ SYSTEM_PROMPT = (
     "You are MuleRadar, an anti-money-laundering investigation assistant. You are given a JSON case "
     "produced by a transaction-graph detector (accounts, money-flow edges, reconstructed timeline, "
     "risk score, scheme type). Answer strictly from the case data; cite account ids, amounts and "
-    "timestamps. Be concise and factual. Do not invent facts that are not in the case."
+    "timestamps. Be concise and factual. Do not invent facts that are not in the case. A sum over all "
+    "transfers counts funds at every hop: call it the total across transfers, never unique funds or money lost."
 )
 
 
@@ -92,8 +93,8 @@ def template_answer(case: dict, question: str) -> str:
                 f"{case['summary']} {f['structured']} of {f['n_tx']} transfers sit just under the 10k "
                 f"reporting threshold.")
     if any(w in q for w in ("how much", "amount", "total", "money", "value")):
-        return (f"{_money(f['total'])} moved across {f['n_tx']} transactions between {f['start']} and "
-                f"{f['end']}.")
+        return (f"Total across {f['n_tx']} transfers between {f['start']} and {f['end']}: {_money(f['total'])}. "
+                f"Funds passing through several accounts are counted at each step, so this is not unique funds.")
     if any(w in q for w in ("who", "account", "source", "mule", "destination", "beneficiar")):
         return (f"Sources: {', '.join(r['source']) or 'none'}. Mules: {', '.join(r['mule']) or 'none'}. "
                 f"Destinations: {', '.join(r['destination']) or 'none'}.")
@@ -117,12 +118,13 @@ def template_report(case: dict) -> str:
         for s in case["timeline"]
     )
     subjects = "\n".join(f"- `{n['id']}` ({n['role']}, account risk {n['risk_score']}/100)" for n in case["nodes"])
+    findings = "\n".join(f"- Detector finding ({h['detector']}): {h['reason']}" for h in case.get("indicators", []))
     return f"""# Suspicious Activity Report (DRAFT) - Case {case['id']}
 
 **Typology:** {case['scheme_type']}  
 **Risk score:** {case['risk_score']}/100  
 **Activity period:** {f['start']} to {f['end']}  
-**Total value:** {_money(f['total'])} across {f['n_tx']} transactions
+**Total across transfers:** {_money(f['total'])} over {f['n_tx']} transfers (funds passing through several accounts are counted at each step; this is not unique funds or money lost)
 
 ## 1. Summary
 {case['summary']}
@@ -140,9 +142,9 @@ Funds originated from {', '.join(r['source']) or 'unidentified accounts'}, were 
 {rows}
 
 ## 4. Red-flag indicators
-- Network pattern consistent with **{case['scheme_type']}** layering.
+- Network shape classified by the detector as **{case['scheme_type']}**.
 - {f['structured']} transfer(s) just below the 10,000 reporting threshold (possible structuring).
-- Funds moved through intermediaries rapidly, with most of each inflow forwarded on.
+{findings}
 
 ## 5. Recommended actions
 1. Place enhanced monitoring / temporary holds on the mule accounts.

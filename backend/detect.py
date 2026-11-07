@@ -88,6 +88,7 @@ def detect_cycles(df: pd.DataFrame) -> list[Hit]:
         g = nx.DiGraph()
         g.add_edges_from(zip(win["from_account"], win["to_account"]))
         pair_tx = defaultdict(list)
+        sender = dict(zip(win["tx_id"], win["from_account"]))
         for tx, s, t, a, ts in zip(win["tx_id"], win["from_account"], win["to_account"], win["amount"], win["timestamp"]):
             pair_tx[(s, t)].append((ts, float(a), tx))
         for cyc in nx.simple_cycles(g, length_bound=CYCLE_MAX_LEN):
@@ -98,8 +99,9 @@ def detect_cycles(df: pd.DataFrame) -> list[Hit]:
                 total = sum(a for _, a, _ in path)
                 hits[frozenset(cyc)] = Hit(
                     "cycle", list(cyc), [tx for _, _, tx in path],
-                    f"{len(cyc)}-hop cycle: {_fmt(path[0][1])} left {cyc[0]} and {_fmt(path[-1][1])} returned "
-                    f"within {(path[-1][0] - path[0][0]).total_seconds() / 3600:.1f}h (volume {_fmt(total)})",
+                    f"{len(cyc)}-hop cycle: {sender[path[0][2]]} sent {_fmt(path[0][1])} and {_fmt(path[-1][1])} "
+                    f"returned to it within {(path[-1][0] - path[0][0]).total_seconds() / 3600:.1f}h "
+                    f"(total across the {len(path)} transfers {_fmt(total)}, counting funds at each hop)",
                 )
     return list(hits.values())
 
@@ -156,9 +158,9 @@ def _detect_fan(df: pd.DataFrame, direction: str) -> list[Hit]:
             n = win[other].nunique()
             if n < FAN_MIN_COUNTERPARTIES:
                 continue
-            verb = "received from" if direction == "fan_in" else "sent to"
+            verb, flow = ("received from", "received") if direction == "fan_in" else ("sent to", "sent")
             hits.append(Hit(direction, [acct], win["tx_id"].tolist(),
-                            f"{acct} {verb} {n} distinct accounts within 24h (total {_fmt(win['amount'].sum())})"))
+                            f"{acct} {verb} {n} distinct accounts within 24h (total {flow} {_fmt(win['amount'].sum())})"))
     return hits
 
 
@@ -297,7 +299,7 @@ def build_timeline(tx: pd.DataFrame, roles: dict[str, str], scheme_type: str) ->
         rs, rt = roles.get(s, "mule"), roles.get(t, "mule")
         prior = [(pts, pa) for pts, pa in received[s] if pts < ts]
         if scheme_type == "CYCLE" and t == origin:
-            desc = f"Cycle closes: {s} returns {_fmt(amt)} to origin {t}, hiding the source of funds"
+            desc = f"Cycle closes: {s} sends {_fmt(amt)} back to origin {t}"
         elif rs == "mule" and prior:
             lag = (ts - prior[-1][0]).total_seconds() / 3600
             desc = (f"Mule {s} forwards {_fmt(amt)} to {rt} {t}, {lag:.1f}h after receiving "
@@ -362,8 +364,9 @@ def build_case(case_id: str, hits: list[Hit], df_by_tx: pd.DataFrame, df: pd.Dat
     n_dst = sum(r == "destination" for r in roles.values())
     reasons = sorted(hits, key=lambda h: ["cycle", "fan_in", "fan_out", "pass_through"].index(h.detector))
     case.summary = (
-        f"{case.scheme_type} scheme: {len(roles)} accounts ({n_src} source, {n_mule} mule, {n_dst} destination) "
-        f"moved {_fmt(tx['amount'].sum())} across {len(tx)} transactions in {duration_hours(tx):.1f}h. "
+        f"{case.scheme_type} scheme: {len(roles)} accounts ({n_src} source, {n_mule} mule, {n_dst} destination), "
+        f"{len(tx)} transfers over {duration_hours(tx):.1f}h. Total across transfers: {_fmt(tx['amount'].sum())} "
+        f"(funds passing through several accounts are counted at each step, so this is not unique funds). "
         f"Key signal: {reasons[0].reason}."
     )
     return case
@@ -395,6 +398,7 @@ def compute_metrics(df: pd.DataFrame, cases: list[Case], ground_truth: list[dict
     flagged = {t for c in cases for t in c.tx["tx_id"]}
     laundering = set(df.loc[df["is_laundering"] == 1, "tx_id"])
     tp = len(flagged & laundering)
+    in_schemes = {t for s in ground_truth or [] for t in s.get("transactions", [])} & laundering
     precision = tp / len(flagged) if flagged else 0.0
     recall = tp / len(laundering) if laundering else 0.0
 
@@ -415,6 +419,10 @@ def compute_metrics(df: pd.DataFrame, cases: list[Case], ground_truth: list[dict
         "transactions": int(len(df)),
         "labelled_laundering": len(laundering),
         "flagged_transactions": len(flagged),
+        "true_positive_transactions": tp,
+        "schemes_type_correct": type_ok,
+        "scheme_match_threshold": MATCH_THRESHOLD,
+        "laundering_in_schemes": len(in_schemes),
     }
 
 
