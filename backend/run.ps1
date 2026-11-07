@@ -13,4 +13,7 @@ Write-Host "[setup] Installing dependencies..."
 & $py -m pip install --quiet --disable-pip-version-check -r requirements.txt
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 & $py top_cases.py
+# Free port 8000 if an older backend is still running (e.g. in another window)
+Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 & $py -m uvicorn main:app --host 127.0.0.1 --port 8000
