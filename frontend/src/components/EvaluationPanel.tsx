@@ -33,16 +33,21 @@ export function EvaluationPanel() {
               <dt>Recall</dt>
               <dd>{formatPercent(e.recall)}</dd>
             </div>
-            <div>
-              <dt>Labelled schemes found</dt>
-              <dd>
-                {num(e.schemesFound)} / {num(e.schemesTotal)}
-              </dd>
-            </div>
-            <div>
-              <dt>Scheme type correct</dt>
-              <dd>{formatPercent(e.schemeTypeAccuracy)}</dd>
-            </div>
+            {e.schemesTotal > 0 && (
+              <div>
+                <dt>Labelled schemes found</dt>
+                <dd>
+                  {num(e.schemesFound)} / {num(e.schemesTotal)}
+                </dd>
+              </div>
+            )}
+            {e.schemesTotal > 0 && (
+              <div>
+                <dt>Scheme type correct</dt>
+                {/* The backend reports 0 when no scheme was found, which means "not measured". */}
+                <dd>{e.schemesFound > 0 ? formatPercent(e.schemeTypeAccuracy) : 'Not measured'}</dd>
+              </div>
+            )}
           </dl>
           <p className="small muted">
             Computed by the backend against the dataset’s laundering labels, per transaction: precision is the share of transactions in cases that are
