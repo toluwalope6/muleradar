@@ -9,6 +9,18 @@ export function formatMoney(amount: number, currency: string): string {
   return f.format(amount);
 }
 
+const wholeFormatters = new Map<string, Intl.NumberFormat>();
+
+export function formatMoneyWhole(amount: number, currency: string): string {
+  if (!Number.isInteger(amount)) return formatMoney(amount, currency);
+  let f = wholeFormatters.get(currency);
+  if (!f) {
+    f = new Intl.NumberFormat('en-IE', { style: 'currency', currency, maximumFractionDigits: 0 });
+    wholeFormatters.set(currency, f);
+  }
+  return f.format(amount);
+}
+
 export function formatMoneyShort(amount: number, currency: string): string {
   const symbol = currency === 'EUR' ? '€' : `${currency} `;
   if (amount >= 1000) return `${symbol}${(amount / 1000).toFixed(amount % 1000 === 0 ? 0 : 1)}k`;

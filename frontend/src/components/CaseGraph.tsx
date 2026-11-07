@@ -1,147 +1,150 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import cytoscape from 'cytoscape';
 import type { CaseDetail } from '../data/types';
-import { formatMoneyShort } from '../lib/format';
+import { accountShortLabels, caseFacts } from '../lib/caseStory';
+import { formatMoneyWhole } from '../lib/format';
+import { computeLayout } from '../lib/graphLayout';
 import type { Selection } from '../lib/selection';
 
 interface Props {
   caseDetail: CaseDetail;
   selection: Selection;
   onSelect: (selection: Selection) => void;
+  showContext: boolean;
+  onToggleContext: (show: boolean) => void;
+  detailsPanel: ReactNode;
 }
 
-const ROLE_COLORS: Record<string, string> = {
-  origin: '#2dd4bf',
-  intermediary: '#5eead4',
-  collector: '#f5b94a',
-  source: '#60a5fa',
-  destination: '#a5b4fc',
-  context: '#334155',
-};
+const ALWAYS_SHOW_AMOUNTS_UP_TO = 5;
+const FONT = 'Inter, ui-sans-serif, system-ui, sans-serif';
+const COLORS = { flaggedNode: '#2dd4bf', hubNode: '#f5b94a', contextNode: '#475569', edge: '#2bb3a3', contextEdge: '#64748b' };
 
-function layoutFor(c: CaseDetail): cytoscape.LayoutOptions {
-  if (c.indicatorTypes.includes('circular_flow')) {
-    return { name: 'circle', padding: 48, animate: false, startAngle: -Math.PI / 2 };
-  }
-  const targets = new Set(c.transactions.map((t) => t.to));
-  const roots = c.accounts.filter((a) => !targets.has(a.id)).map((a) => a.id);
-  return { name: 'breadthfirst', directed: true, roots, padding: 40, spacingFactor: 1.15, animate: false };
-}
-
-export function CaseGraph({ caseDetail, selection, onSelect }: Props) {
+export function CaseGraph({ caseDetail, selection, onSelect, showContext, onToggleContext, detailsPanel }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const facts = useMemo(() => caseFacts(caseDetail), [caseDetail]);
+  const panelOpen = selection !== null;
+  const hiddenContextCount = facts.contextTransfers.length;
+  const showAllAmounts = facts.flaggedTransfers.length + (showContext ? facts.contextTransfers.length : 0) <= ALWAYS_SHOW_AMOUNTS_UP_TO;
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const amounts = caseDetail.transactions.map((t) => t.amount);
+    const labels = accountShortLabels(caseDetail);
+    const placements = computeLayout(caseDetail, showContext);
+    const contextIds = new Set(facts.contextAccounts.map((a) => a.id));
+    const hubIds = new Set(caseDetail.accounts.filter((a) => a.role === 'collector' || a.role === 'origin').map((a) => a.id));
+    const transfers = showContext ? caseDetail.transactions : facts.flaggedTransfers;
+    const amounts = transfers.map((t) => t.amount);
     const minAmount = Math.min(...amounts);
     const maxAmount = Math.max(...amounts);
+
     const cy = cytoscape({
       container: containerRef.current,
       elements: [
-        ...caseDetail.accounts.map((a) => ({
-          data: { id: a.id, label: a.id, color: ROLE_COLORS[a.role] },
-          classes: a.role === 'context' ? 'context' : '',
-        })),
-        ...caseDetail.transactions.map((t) => ({
-          data: {
-            id: t.id,
-            source: t.from,
-            target: t.to,
-            amount: t.amount,
-            label: formatMoneyShort(t.amount, t.currency),
-          },
-          classes: t.isEvidence ? 'evidence' : 'context',
+        ...caseDetail.accounts
+          .filter((a) => placements[a.id])
+          .map((a) => ({
+            data: { id: a.id, label: `${labels[a.id]}\n…${a.id.slice(-4)}` },
+            position: { x: placements[a.id].x, y: placements[a.id].y },
+            classes: [`label-${placements[a.id].side}`, contextIds.has(a.id) ? 'context' : hubIds.has(a.id) ? 'hub' : 'flagged'].join(' '),
+          })),
+        ...transfers.map((t) => ({
+          data: { id: t.id, source: t.from, target: t.to, amount: t.amount, amountLabel: formatMoneyWhole(t.amount, t.currency) },
+          classes: [t.isEvidence ? 'flagged' : 'context', showAllAmounts ? 'show-amount' : ''].join(' '),
         })),
       ],
       style: [
         {
           selector: 'node',
           style: {
-            'background-color': 'data(color)',
+            'background-color': COLORS.flaggedNode,
             label: 'data(label)',
-            color: '#cbd5e1',
-            'font-size': 11,
-            'font-family': 'Inter, ui-sans-serif, system-ui, sans-serif',
+            'text-wrap': 'wrap',
+            'text-justification': 'center',
+            color: '#dbe4f0',
+            'font-size': 12,
+            'font-family': FONT,
             'font-weight': 600,
-            'text-valign': 'bottom',
-            'text-margin-y': 7,
+            'line-height': 1.25,
+            'text-background-color': '#0b1426',
+            'text-background-opacity': 0.92,
+            'text-background-padding': '3px',
+            'text-background-shape': 'roundrectangle',
             width: 30,
             height: 30,
             'border-width': 3,
-            'border-color': '#0b1220',
+            'border-color': '#0b1426',
             'overlay-opacity': 0,
           },
         },
+        { selector: 'node.hub', style: { 'background-color': COLORS.hubNode, width: 36, height: 36 } },
         {
           selector: 'node.context',
-          style: { 'border-style': 'dashed', 'border-color': '#64748b', 'border-width': 2, color: '#64748b' },
+          style: { 'background-color': '#1e293b', 'border-color': COLORS.contextNode, 'border-style': 'dashed', 'border-width': 2, color: '#94a3b8' },
         },
+        { selector: 'node.label-top', style: { 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': -8 } },
+        { selector: 'node.label-bottom', style: { 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8 } },
+        { selector: 'node.label-left', style: { 'text-valign': 'center', 'text-halign': 'left', 'text-margin-x': -10, 'text-justification': 'right' } },
+        { selector: 'node.label-right', style: { 'text-valign': 'center', 'text-halign': 'right', 'text-margin-x': 10, 'text-justification': 'left' } },
         {
           selector: 'edge',
           style: {
-            width: minAmount === maxAmount ? 2.5 : `mapData(amount, ${minAmount}, ${maxAmount}, 1.5, 5)`,
-            'line-color': '#2a9d8f',
-            'target-arrow-color': '#2a9d8f',
+            width: minAmount === maxAmount ? 3 : `mapData(amount, ${minAmount}, ${maxAmount}, 2, 6)`,
+            'line-color': COLORS.edge,
+            'target-arrow-color': COLORS.edge,
             'target-arrow-shape': 'triangle',
-            'arrow-scale': 1.1,
+            'arrow-scale': 1.6,
             'curve-style': 'bezier',
-            label: 'data(label)',
-            'font-size': 10,
-            'font-family': 'Inter, ui-sans-serif, system-ui, sans-serif',
-            color: '#e2e8f0',
-            'text-background-color': '#0f1a2e',
+            'font-size': 12,
+            'font-family': FONT,
+            'font-weight': 600,
+            color: '#f1f5f9',
+            'text-background-color': '#0b1426',
             'text-background-opacity': 1,
-            'text-background-padding': '2px',
+            'text-background-padding': '3px',
             'text-background-shape': 'roundrectangle',
             'text-rotation': 'autorotate',
+            'overlay-padding': 6,
             'overlay-opacity': 0,
           },
         },
         {
           selector: 'edge.context',
-          style: { 'line-style': 'dashed', 'line-color': '#475569', 'target-arrow-color': '#475569', color: '#94a3b8' },
+          style: { 'line-style': 'dashed', 'line-color': COLORS.contextEdge, 'target-arrow-color': COLORS.contextEdge, color: '#cbd5e1' },
         },
-        { selector: '.dimmed', style: { opacity: 0.22 } },
-        {
-          selector: 'node.focused',
-          style: { 'border-color': '#f8fafc', 'border-width': 4, 'border-style': 'solid', width: 36, height: 36 },
-        },
-        {
-          selector: 'edge.focused',
-          style: { 'line-color': '#5eead4', 'target-arrow-color': '#5eead4', width: 6, 'z-index': 10 },
-        },
+        { selector: 'edge.show-amount, edge.hovered, edge.focused, edge.related', style: { label: 'data(amountLabel)' } },
+        { selector: 'edge.hovered', style: { 'line-color': '#5eead4', 'target-arrow-color': '#5eead4', 'z-index': 9 } },
+        { selector: '.dimmed', style: { opacity: 0.18 } },
+        { selector: 'node.focused', style: { 'border-color': '#f8fafc', 'border-width': 4, 'border-style': 'solid' } },
+        { selector: 'edge.focused', style: { 'line-color': '#99f6e4', 'target-arrow-color': '#99f6e4', 'z-index': 10 } },
         { selector: 'edge.related', style: { 'line-color': '#5eead4', 'target-arrow-color': '#5eead4' } },
       ],
-      layout: layoutFor(caseDetail),
+      layout: { name: 'preset', fit: true, padding: 56 },
       minZoom: 0.3,
-      maxZoom: 3,
-      wheelSensitivity: 0.2,
+      maxZoom: 1.5,
       autounselectify: true,
       boxSelectionEnabled: false,
     });
+    cy.fit(undefined, 56);
 
     cy.on('tap', 'node', (e) => onSelectRef.current({ kind: 'account', id: e.target.id() }));
     cy.on('tap', 'edge', (e) => onSelectRef.current({ kind: 'transaction', id: e.target.id() }));
     cy.on('tap', (e) => {
       if (e.target === cy) onSelectRef.current(null);
     });
-    cy.on('mouseover', 'node, edge', () => {
-      if (containerRef.current) containerRef.current.style.cursor = 'pointer';
-    });
-    cy.on('mouseout', 'node, edge', () => {
-      if (containerRef.current) containerRef.current.style.cursor = 'default';
-    });
+    cy.on('mouseover', 'edge', (e) => e.target.addClass('hovered'));
+    cy.on('mouseout', 'edge', (e) => e.target.removeClass('hovered'));
+    cy.on('mouseover', 'node, edge', () => containerRef.current && (containerRef.current.style.cursor = 'pointer'));
+    cy.on('mouseout', 'node, edge', () => containerRef.current && (containerRef.current.style.cursor = 'default'));
 
     cyRef.current = cy;
     return () => {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [caseDetail]);
+  }, [caseDetail, facts, showContext, showAllAmounts]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -155,39 +158,69 @@ export function CaseGraph({ caseDetail, selection, onSelect }: Props) {
     cy.elements().not(neighbourhood).addClass('dimmed');
     el.addClass('focused');
     if (selection.kind === 'account') el.connectedEdges().addClass('related');
-  }, [selection, caseDetail]);
+  }, [selection, caseDetail, showContext]);
 
-  const fit = () => cyRef.current?.animate({ fit: { eles: cyRef.current.elements(), padding: 40 } }, { duration: 250 });
-  const relayout = () => cyRef.current?.layout(layoutFor(caseDetail)).run();
+  // The canvas narrows while the details panel is open; refit so nothing hides behind it.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.resize();
+    cy.fit(undefined, 56);
+  }, [panelOpen]);
+
+  const fit = () => cyRef.current?.animate({ fit: { eles: cyRef.current.elements(), padding: 56 } }, { duration: 250 });
+  const resetLayout = () => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    const placements = computeLayout(caseDetail, showContext);
+    cy.nodes().forEach((n) => {
+      const p = placements[n.id()];
+      if (p) n.position({ x: p.x, y: p.y });
+    });
+    cy.fit(undefined, 56);
+  };
 
   return (
-    <div className="graph-wrap">
-      <div ref={containerRef} className="graph-canvas" aria-label="Directed transaction graph" role="img" />
-      <div className="graph-toolbar">
-        <button type="button" className="btn btn-ghost" onClick={fit}>
-          Fit
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={relayout}>
-          Reset layout
-        </button>
-      </div>
-      <div className="graph-legend" aria-label="Legend">
-        {(['origin', 'source', 'collector', 'intermediary', 'destination'] as const)
-          .filter((role) => caseDetail.accounts.some((a) => a.role === role))
-          .map((role) => (
-            <span key={role} className="legend-item">
-              <span className="legend-dot" style={{ background: ROLE_COLORS[role] }} />
-              {role[0].toUpperCase() + role.slice(1)}
-            </span>
-          ))}
-        <span className="legend-item">
-          <span className="legend-line" /> Evidence transfer
-        </span>
-        {caseDetail.transactions.some((t) => !t.isEvidence) && (
+    <div className="graph-card">
+      <div className="graph-bar">
+        <div className="legend" aria-label="Legend">
           <span className="legend-item">
-            <span className="legend-line legend-line-dashed" /> Context (not flagged)
+            <span className="legend-dot legend-dot-hub" /> Key account
           </span>
-        )}
+          <span className="legend-item">
+            <span className="legend-dot" /> Flagged account
+          </span>
+          <span className="legend-item">
+            <span className="legend-arrow" /> Flagged transfer (arrow shows direction, thicker = larger)
+          </span>
+          {showContext && hiddenContextCount > 0 && (
+            <span className="legend-item">
+              <span className="legend-arrow legend-arrow-dashed" /> Contextual, not flagged
+            </span>
+          )}
+        </div>
+        <div className="graph-actions">
+          {hiddenContextCount > 0 && (
+            <label className="toggle">
+              <input type="checkbox" checked={showContext} onChange={(e) => onToggleContext(e.target.checked)} />
+              Show contextual transfers ({hiddenContextCount})
+            </label>
+          )}
+          <button type="button" className="btn btn-quiet" onClick={fit}>
+            Fit
+          </button>
+          <button type="button" className="btn btn-quiet" onClick={resetLayout}>
+            Reset layout
+          </button>
+        </div>
+      </div>
+      <div className={`graph-body${panelOpen ? ' has-panel' : ''}`}>
+        <div className="graph-stage">
+          <div ref={containerRef} className="graph-canvas" aria-label="Directed graph of transfers between accounts" role="img" />
+          {!showAllAmounts && !panelOpen && <p className="graph-hint">Hover over a transfer to see its amount. Click an account or transfer for details.</p>}
+          {showAllAmounts && !panelOpen && <p className="graph-hint">Click an account or transfer for details.</p>}
+        </div>
+        {panelOpen && detailsPanel}
       </div>
     </div>
   );

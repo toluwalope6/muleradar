@@ -1,24 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { DATA_SOURCE_LABEL, generateDraftReport, getCase, listCases } from './data/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { generateDraftReport, getCase, listCases } from './data/api';
 import type { CaseDetail, CaseSummary, DraftReport } from './data/types';
 import { errorMessage, type AsyncState } from './lib/async';
+import { buildCaseStory } from './lib/caseStory';
 import type { Selection } from './lib/selection';
 import { CaseList } from './components/CaseList';
 import { CaseGraph } from './components/CaseGraph';
-import { CaseSummaryCard } from './components/CaseSummaryCard';
-import { EvidencePanel } from './components/EvidencePanel';
-import { ReportPanel } from './components/ReportPanel';
+import { CaseOverview } from './components/CaseOverview';
+import { DetailsPanel } from './components/DetailsPanel';
+import { ReportModal } from './components/ReportModal';
 import { TransactionTable } from './components/TransactionTable';
-import { WhyFlaggedPanel } from './components/WhyFlaggedPanel';
 import { EmptyState, ErrorState, SkeletonLines } from './components/StateViews';
-
-type Tab = 'evidence' | 'why' | 'report';
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'evidence', label: 'Evidence' },
-  { id: 'why', label: 'Why flagged?' },
-  { id: 'report', label: 'Draft report' },
-];
 
 export default function App() {
   const [cases, setCases] = useState<AsyncState<CaseSummary[]>>({ status: 'idle' });
@@ -26,7 +18,8 @@ export default function App() {
   const [caseState, setCaseState] = useState<AsyncState<CaseDetail>>({ status: 'idle' });
   const [caseReloadKey, setCaseReloadKey] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
-  const [tab, setTab] = useState<Tab>('why');
+  const [showContext, setShowContext] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [reports, setReports] = useState<Record<string, AsyncState<DraftReport>>>({});
 
   const loadCases = useCallback(() => {
@@ -46,6 +39,8 @@ export default function App() {
     let cancelled = false;
     setCaseState({ status: 'loading' });
     setSelection(null);
+    setShowContext(false);
+    setReportOpen(false);
     getCase(selectedCaseId)
       .then((data) => !cancelled && setCaseState({ status: 'success', data }))
       .catch((err) => !cancelled && setCaseState({ status: 'error', error: errorMessage(err) }));
@@ -61,12 +56,45 @@ export default function App() {
       .catch((err) => setReports((r) => ({ ...r, [caseId]: { status: 'error', error: errorMessage(err) } })));
   }, []);
 
-  const selectFromGraph = useCallback((next: Selection) => {
-    setSelection(next);
-    if (next) setTab('evidence');
-  }, []);
-
   const detail = caseState.status === 'success' ? caseState.data : null;
+  const story = useMemo(() => (detail ? buildCaseStory(detail) : null), [detail]);
+
+  const select = useCallback(
+    (next: Selection) => {
+      if (next?.kind === 'transaction' && detail?.transactions.find((t) => t.id === next.id)?.isEvidence === false) {
+        setShowContext(true);
+      }
+      setSelection(next);
+    },
+    [detail],
+  );
+
+  const selectFromTable = useCallback(
+    (next: Selection) => {
+      select(next);
+      document.getElementById('follow-the-money')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [select],
+  );
+
+  const openReport = () => {
+    if (!detail) return;
+    const existing = reports[detail.id];
+    if (!existing || existing.status === 'error') generateReport(detail.id);
+    setReportOpen(true);
+  };
+  const closeReport = useCallback(() => setReportOpen(false), []);
+
+  const toggleContext = (show: boolean) => {
+    setShowContext(show);
+    if (!show && selection && detail) {
+      const hidden =
+        selection.kind === 'transaction'
+          ? detail.transactions.find((t) => t.id === selection.id)?.isEvidence === false
+          : !detail.transactions.some((t) => t.isEvidence && (t.from === selection.id || t.to === selection.id));
+      if (hidden) setSelection(null);
+    }
+  };
 
   return (
     <div className="app">
@@ -76,98 +104,62 @@ export default function App() {
             ◎
           </span>
           <span className="brand-name">MuleRadar</span>
-          <span className="brand-sub">Investigation dashboard</span>
         </div>
-        <div className="topbar-right">
-          <span className="disclaimer">Indicators only, not proof of wrongdoing · No AI service connected</span>
-          <span className="demo-badge">{DATA_SOURCE_LABEL}</span>
-        </div>
+        <span className="demo-badge" title="All accounts, transfers and amounts are fictional">
+          Synthetic demo data
+        </span>
       </header>
 
-      <main className="layout">
+      <div className="shell">
         <CaseList state={cases} selectedId={selectedCaseId} onSelect={setSelectedCaseId} onRetry={loadCases} />
 
-        <section className="panel center" aria-label="Transaction network">
-          {!selectedCaseId && cases.status === 'success' && (
-            <EmptyState title="No case selected" detail="Choose a network from the list to inspect it." />
+        <main className="main">
+          {cases.status === 'success' && cases.data.length === 0 && (
+            <EmptyState title="Nothing to review" detail="When the sample rules flag a network, it will appear here." />
+          )}
+          {cases.status === 'error' && (
+            <EmptyState title="No case to show" detail="The case list needs to load before a case can be opened." />
           )}
           {(caseState.status === 'loading' || (cases.status === 'loading' && !detail)) && (
-            <div className="center-loading">
+            <div className="main-loading" aria-busy="true">
+              <div className="skeleton skeleton-title" />
+              <SkeletonLines rows={5} />
               <div className="graph-placeholder shimmer" />
-              <SkeletonLines rows={4} />
             </div>
           )}
-          {cases.status === 'error' && !detail && (
-            <EmptyState title="No network to display" detail="The case list must load before a network can be shown." />
-          )}
           {caseState.status === 'error' && (
-            <ErrorState
-              title="Couldn’t load this case"
-              detail={caseState.error}
-              onRetry={() => setCaseReloadKey((k) => k + 1)}
-            />
+            <ErrorState title="Couldn’t load this case" detail={caseState.error} onRetry={() => setCaseReloadKey((k) => k + 1)} />
           )}
-          {detail && caseState.status === 'success' && (
+          {detail && story && caseState.status === 'success' && (
             <>
-              <div className="panel-header">
-                <h2>
-                  Transaction network <span className="mono dim">· {detail.id}</span>
-                </h2>
-                <span className="panel-sub">Click accounts or transfers to inspect evidence</span>
-              </div>
-              <CaseGraph caseDetail={detail} selection={selection} onSelect={selectFromGraph} />
-              <TransactionTable transactions={detail.transactions} selection={selection} onSelect={selectFromGraph} />
-            </>
-          )}
-        </section>
+              <CaseOverview caseDetail={detail} story={story} selection={selection} onSelect={select} onOpenReport={openReport} />
 
-        <aside className="panel details" aria-label="Case details">
-          {caseState.status === 'loading' || caseState.status === 'idle' ? (
-            cases.status === 'success' && cases.data.length === 0 ? (
-              <EmptyState title="No case details" detail="There are no flagged networks to review." />
-            ) : cases.status === 'error' ? (
-              <EmptyState title="No case details" />
-            ) : (
-              <SkeletonLines rows={10} />
-            )
-          ) : caseState.status === 'error' ? (
-            <EmptyState title="Case details unavailable" />
-          ) : (
-            <>
-              <CaseSummaryCard caseDetail={caseState.data} />
-              <div className="tabs" role="tablist">
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === t.id}
-                    className={`tab${tab === t.id ? ' is-active' : ''}`}
-                    onClick={() => setTab(t.id)}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <div className="tab-body" role="tabpanel">
-                {tab === 'evidence' && (
-                  <EvidencePanel caseDetail={caseState.data} selection={selection} onSelect={setSelection} />
-                )}
-                {tab === 'why' && (
-                  <WhyFlaggedPanel caseDetail={caseState.data} selection={selection} onSelect={setSelection} />
-                )}
-                {tab === 'report' && (
-                  <ReportPanel
-                    caseDetail={caseState.data}
-                    state={reports[caseState.data.id] ?? { status: 'idle' }}
-                    onGenerate={() => generateReport(caseState.data.id)}
-                  />
-                )}
-              </div>
+              <section id="follow-the-money" className="graph-section">
+                <h2>Follow the money</h2>
+                <CaseGraph
+                  caseDetail={detail}
+                  selection={selection}
+                  onSelect={select}
+                  showContext={showContext}
+                  onToggleContext={toggleContext}
+                  detailsPanel={selection && <DetailsPanel caseDetail={detail} selection={selection} onSelect={select} />}
+                />
+              </section>
+
+              <TransactionTable caseDetail={detail} selection={selection} onSelect={selectFromTable} />
             </>
           )}
-        </aside>
-      </main>
+        </main>
+      </div>
+
+      {reportOpen && detail && (
+        <ReportModal
+          caseDetail={detail}
+          state={reports[detail.id] ?? { status: 'idle' }}
+          onGenerate={() => generateReport(detail.id)}
+          onClose={closeReport}
+        />
+      )}
     </div>
   );
 }

@@ -158,7 +158,7 @@ function newAccount(acc: Account, firstTx: Transaction): Indicator {
   const days = Math.floor(hoursBetween(acc.openedOn, firstTx.timestamp) / 24);
   return indicator('new_account', [
     {
-      text: `${acc.id} was opened on ${formatDate(acc.openedOn)}, ${days} days before its first evidence transaction (${firstTx.id}).`,
+      text: `${acc.id} was opened on ${formatDate(acc.openedOn)}, ${days} days before its first flagged transfer (${firstTx.id}).`,
       transactionIds: [firstTx.id],
     },
   ]);
@@ -186,7 +186,7 @@ function finalizeCase(draft: CaseDraft): CaseDetail {
     points: SAMPLE_SCORE_WEIGHTS[i.type],
   }));
   const band = VOLUME_BANDS.find((b) => evidenceVolume >= b.min);
-  if (band) scoreComponents.push({ label: `Evidence volume ≥ ${money(band.min)}`, points: band.points });
+  if (band) scoreComponents.push({ label: `Total across flagged transfers ≥ ${money(band.min)}`, points: band.points });
   const priorityScore = Math.min(
     100,
     scoreComponents.reduce((total, c) => total + c.points, 0),
@@ -221,7 +221,7 @@ function caseC001(): CaseDetail {
   const ctx = tx('TX-10005', '2026-10-13T15:00:00Z', 'ACC-1090', 'ACC-1001', 50_000, 'Customer payment', false);
   return finalizeCase({
     id: 'C-001',
-    title: 'Four-account circular transfer loop',
+    title: 'Funds looped through four accounts',
     accounts,
     transactions: [ctx, t1, t2, t3, t4],
     indicators: [
@@ -262,7 +262,7 @@ function caseC002(): CaseDetail {
   const ctx = tx('TX-20010', '2026-09-29T09:30:00Z', 'ACC-2290', 'ACC-2100', 120, 'Initial deposit', false);
   return finalizeCase({
     id: 'C-002',
-    title: 'Rapid fan-in / fan-out through a newly opened account',
+    title: 'Collected and paid out via a new account',
     accounts,
     transactions: [ctx, ...inflows, ...outflows],
     indicators: [fanIn(inflows), fanOut(outflows, inflows), nearThreshold(inflows), newAccount(collector, inflows[0])],
@@ -291,7 +291,7 @@ function caseC003(): CaseDetail {
   const ctx = tx('TX-30007', '2026-10-20T14:00:00Z', 'ACC-3001', 'ACC-3190', 1_150, 'Office rent', false);
   return finalizeCase({
     id: 'C-003',
-    title: 'Single inflow rapidly split across five accounts',
+    title: 'One payment split across five accounts',
     accounts,
     transactions: [ctx, inbound, ...outflows],
     indicators: [fanOut(outflows), indicator('rapid_pass_through', [passThroughPoint(inbound, outflows)])],
@@ -311,7 +311,7 @@ function caseC004(): CaseDetail {
   ];
   return finalizeCase({
     id: 'C-004',
-    title: 'Three-account circular transfers',
+    title: 'Small loop between three accounts',
     accounts,
     transactions: hops,
     indicators: [circularFlow(hops)],

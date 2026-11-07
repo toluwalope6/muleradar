@@ -19,7 +19,13 @@ export const ROLE_LABELS: Record<AccountRole, string> = {
 };
 
 export const PRIORITY_LABELS: Record<Priority, string> = {
-  high: 'High priority',
-  medium: 'Medium priority',
-  low: 'Low priority',
+  high: 'High review priority',
+  medium: 'Medium review priority',
+  low: 'Low review priority',
+};
+
+export const PRIORITY_SHORT: Record<Priority, string> = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
 };

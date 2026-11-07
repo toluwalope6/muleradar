@@ -17,8 +17,8 @@ export function buildDraftReport(c: CaseDetail): DraftReport {
       {
         heading: '1. Case overview',
         paragraphs: [
-          `Case ${c.id} (“${c.title}”) was surfaced by the sample detection rules on synthetic demo data with a priority score of ${c.priorityScore}/100 (${c.priority}).`,
-          `It involves ${c.accountCount} accounts and ${c.evidenceTransactionCount} evidence transactions totalling ${money(c.evidenceVolume)}, between ${formatDateTime(c.windowStart)} and ${formatDateTime(c.windowEnd)}.`,
+          `Case ${c.id} (“${c.title}”) was surfaced by the sample detection rules on synthetic demo data with a review priority score of ${c.priorityScore}/100 (${c.priority}). The score ranks cases for review using sample rule weights; it is not a probability of wrongdoing.`,
+          `It involves ${c.accountCount} flagged accounts and ${c.evidenceTransactionCount} flagged transfers (total across flagged transfers: ${money(c.evidenceVolume)}; funds that pass through several accounts are counted at each step), between ${formatDateTime(c.windowStart)} and ${formatDateTime(c.windowEnd)}.`,
         ],
       },
       {
@@ -35,8 +35,8 @@ export function buildDraftReport(c: CaseDetail): DraftReport {
         ),
       },
       {
-        heading: '4. Transaction evidence',
-        paragraphs: ['The evidence transactions are listed in the table below, in chronological order.'],
+        heading: '4. Flagged transfers',
+        paragraphs: ['The flagged transfers are listed in the table below, in chronological order.'],
       },
       {
         heading: '5. Limitations',
