@@ -13,7 +13,17 @@ Write-Host "[setup] Installing dependencies..."
 & $py -m pip install --quiet --disable-pip-version-check -r requirements.txt
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 & $py top_cases.py
-# Free port 8000 if an older backend is still running (e.g. in another window)
+# Free port 8000 if an older backend is still running (incl. orphaned `uvicorn --reload` workers)
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'uvicorn|spawn_main' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1
+$busy = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+if ($busy) {
+    $owner = Get-Process -Id $busy[0].OwningProcess -ErrorAction SilentlyContinue
+    Write-Host "[setup] Port 8000 is still used by '$($owner.ProcessName)' (PID $($busy[0].OwningProcess)). Close it or reboot, then rerun."
+    exit 1
+}
 & $py -m uvicorn main:app --host 127.0.0.1 --port 8000
