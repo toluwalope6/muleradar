@@ -412,6 +412,9 @@ def compute_metrics(df: pd.DataFrame, cases: list[Case], ground_truth: list[dict
         "schemes_found": found,
         "schemes_total": schemes_total,
         "scheme_type_accuracy": round(type_ok / found, 3) if found else 0.0,
+        "transactions": int(len(df)),
+        "labelled_laundering": len(laundering),
+        "flagged_transactions": len(flagged),
     }
 
 

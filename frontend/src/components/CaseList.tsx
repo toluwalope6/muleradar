@@ -1,6 +1,7 @@
 import type { CaseSummary } from '../data/types';
 import type { AsyncState } from '../lib/async';
 import { PRIORITY_SHORT } from '../lib/indicators';
+import { EvaluationPanel } from './EvaluationPanel';
 import { EmptyState, ErrorState, SkeletonLines } from './StateViews';
 
 interface Props {
@@ -17,6 +18,7 @@ export function CaseList({ state, selectedId, onSelect, onRetry }: Props) {
         <h2>Cases to review</h2>
         <p className="muted small">Ordered by review priority</p>
       </div>
+      <EvaluationPanel />
       {(state.status === 'loading' || state.status === 'idle') && (
         <div className="case-items">
           {Array.from({ length: 4 }, (_, i) => (

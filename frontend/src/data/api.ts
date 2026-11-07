@@ -5,10 +5,10 @@
 // it never falls back to mock data.
 //
 // Mock demo states via the URL: ?mock=empty | error | case-error | report-error (implies mock source)
-import type { CaseDetail, CaseSummary, DraftReport } from './types';
+import type { CaseDetail, CaseSummary, DraftReport, Evaluation } from './types';
 import { MOCK_CASES } from './mockData';
 import { buildDraftReport } from './reportTemplate';
-import { fetchCase, fetchCases, fetchReport } from './backend';
+import { fetchCase, fetchCases, fetchMetrics, fetchReport } from './backend';
 
 export type DataSource = 'live' | 'mock';
 
@@ -73,4 +73,10 @@ export async function generateDraftReport(caseId: string): Promise<DraftReport> 
   await delay(900);
   if (scenario() === 'report-error') throw new Error('The draft report could not be generated (simulated error).');
   return buildDraftReport(findCase(caseId));
+}
+
+/** Precision/recall from the backend. The synthetic mock cases have no labels, so mock mode has none. */
+export async function getEvaluation(): Promise<Evaluation | null> {
+  if (DATA_SOURCE === 'live') return fetchMetrics();
+  return null;
 }

@@ -117,3 +117,15 @@ export interface BackendReport {
 }
 
 export type DraftReport = TemplateReport | BackendReport;
+
+/** Detection evaluation against the dataset's labels, as computed by the backend (live mode only). */
+export interface Evaluation {
+  precision: number;
+  recall: number;
+  schemesFound: number;
+  schemesTotal: number;
+  schemeTypeAccuracy: number;
+  transactions?: number;
+  labelledLaundering?: number;
+  flaggedTransactions?: number;
+}

@@ -244,3 +244,11 @@ ul, ol { margin: 0; }
 .report-md ul, .report-md ol { padding-left: 22px; }
 .report-md code { font-size: 14px; background: #e2e8f0; border-radius: 4px; padding: 0 4px; }
 .report-md .report-table { font-size: 13.5px; }
+
+.evaluation { margin: 0 12px 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 14px; }
+.evaluation summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.evaluation .small { font-size: 14px; line-height: 1.45; margin-top: 8px; }
+.eval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-top: 10px; }
+.eval-grid dt { font-size: 14px; color: var(--muted); }
+.eval-grid dd { font-size: 18px; font-weight: 700; color: var(--text); }
+.error-text { color: #fca5a5; }

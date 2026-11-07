@@ -142,6 +142,14 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
     });
     cy.fit(undefined, 56);
 
+    // Large cases fit at a small zoom; enlarge labels in graph units so they stay at least 12px on screen.
+    const keepLabelsReadable = () => {
+      const size = Math.max(14, 12 / cy.zoom());
+      cy.batch(() => cy.elements().style('font-size', size));
+    };
+    keepLabelsReadable();
+    cy.on('zoom', keepLabelsReadable);
+
     cy.on('tap', 'node', (e) => onSelectRef.current({ kind: 'account', id: e.target.id() }));
     cy.on('tap', 'edge', (e) => onSelectRef.current({ kind: 'transaction', id: e.target.id() }));
     cy.on('tap', (e) => {

@@ -1,6 +1,6 @@
 // Live data source: the MuleRadar FastAPI backend (backend/main.py).
 // Responses are mapped onto the frontend view model without inventing missing fields.
-import type { Account, AccountRole, BackendReport, CaseDetail, CaseSummary, Indicator, IndicatorType, Transaction } from './types';
+import type { Account, AccountRole, BackendReport, CaseDetail, CaseSummary, Evaluation, Indicator, IndicatorType, Transaction } from './types';
 import { INDICATOR_LABELS, priorityForScore } from '../lib/indicators';
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
@@ -206,5 +206,32 @@ export async function fetchReport(caseId: string): Promise<BackendReport> {
     generatedAt: new Date().toISOString(),
     generatedBy: body.generated_by ?? 'unknown',
     markdown: body.report,
+  };
+}
+
+interface ApiMetrics {
+  precision: number;
+  recall: number;
+  schemes_found: number;
+  schemes_total: number;
+  scheme_type_accuracy: number;
+  transactions?: number;
+  labelled_laundering?: number;
+  flagged_transactions?: number;
+}
+
+/** Returns null when the backend has no labelled data to evaluate against. */
+export async function fetchMetrics(): Promise<Evaluation | null> {
+  const m = await request<ApiMetrics>('/metrics');
+  if (!m.schemes_total && !m.labelled_laundering) return null;
+  return {
+    precision: m.precision,
+    recall: m.recall,
+    schemesFound: m.schemes_found,
+    schemesTotal: m.schemes_total,
+    schemeTypeAccuracy: m.scheme_type_accuracy,
+    transactions: m.transactions,
+    labelledLaundering: m.labelled_laundering,
+    flaggedTransactions: m.flagged_transactions,
   };
 }
