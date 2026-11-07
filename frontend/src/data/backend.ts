@@ -224,6 +224,20 @@ interface ApiMetrics {
   scheme_match_threshold?: number;
   laundering_in_schemes?: number;
   dataset?: string | null;
+  dataset_requested?: string | null;
+}
+
+export interface LoadedDataset {
+  /** "ibm" or "synthetic", or null if the backend doesn't know. */
+  source: string | null;
+  /** True when IBM data was requested but synthetic data was generated instead. */
+  fallback: boolean;
+}
+
+export async function fetchLoadedDataset(): Promise<LoadedDataset> {
+  const m = await request<ApiMetrics>('/metrics');
+  const source = m.dataset ?? null;
+  return { source, fallback: source === 'synthetic' && m.dataset_requested === 'ibm' };
 }
 
 /** Returns null when the backend has no labelled data to evaluate against. */

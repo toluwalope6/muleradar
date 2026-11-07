@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from data import build_dataset, sample_source
+from data import build_dataset, sample_meta
 from detect import Results, case_detail, case_summary, run_detection
 from llm import answer_question, draft_report_with_source
 
@@ -67,7 +67,8 @@ def get_case(case_id: str):
 
 @app.get("/metrics")
 def metrics():
-    return {**get_results().metrics, "dataset": sample_source()}
+    meta = sample_meta()
+    return {**get_results().metrics, "dataset": meta["dataset"], "dataset_requested": meta["requested"]}
 
 
 @app.post("/cases/{case_id}/ask")

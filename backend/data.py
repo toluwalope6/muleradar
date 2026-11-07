@@ -343,12 +343,18 @@ def _finalise(df: pd.DataFrame) -> pd.DataFrame:
 SAMPLE_META_FILE = "sample_meta.json"
 
 
+def sample_meta(data_dir: Path = DATA_DIR) -> dict:
+    """{"dataset": built source, "requested": requested kind}; values are None if unknown."""
+    try:
+        meta = json.loads((data_dir / SAMPLE_META_FILE).read_text())
+    except (OSError, ValueError):
+        meta = {}
+    return {"dataset": meta.get("dataset"), "requested": meta.get("requested")}
+
+
 def sample_source(data_dir: Path = DATA_DIR) -> str | None:
     """Which source ("ibm" or "synthetic") built the cached sample, or None if unknown."""
-    try:
-        return json.loads((data_dir / SAMPLE_META_FILE).read_text())["dataset"]
-    except (OSError, ValueError, KeyError):
-        return None
+    return sample_meta(data_dir)["dataset"]
 
 
 def _requested_kind() -> str:

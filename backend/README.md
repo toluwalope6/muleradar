@@ -94,3 +94,13 @@ curl localhost:8000/metrics
 curl -X POST localhost:8000/cases/C001/ask -H 'content-type: application/json' -d '{"question":"Why is this suspicious?"}'
 curl -X POST localhost:8000/cases/C001/report
 ```
+
+## Known limitations / follow-ups
+
+- **Fan-in/fan-out window selection** (`_detect_fan`): for each account only the 24h window with the most
+  counterparties (then highest total) is kept, and transfers under 10% of that window's largest are dropped
+  afterwards. If fewer than 5 counterparties remain, the account gets no fan hit even when another window
+  would qualify. This can miss patterns (lower recall) but does not create false evidence. Left unchanged
+  for now because fixing it changes cases and metrics.
+- `/metrics` precision and recall are transaction coverage across *all* case transactions, including
+  contextual ones added during case enrichment, measured on the development sample (no held-out set).

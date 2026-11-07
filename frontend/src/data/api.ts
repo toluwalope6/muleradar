@@ -8,7 +8,7 @@
 import type { CaseDetail, CaseSummary, DraftReport, Evaluation } from './types';
 import { MOCK_CASES } from './mockData';
 import { buildDraftReport } from './reportTemplate';
-import { fetchCase, fetchCases, fetchMetrics, fetchReport } from './backend';
+import { fetchCase, fetchCases, fetchLoadedDataset, fetchMetrics, fetchReport, type LoadedDataset } from './backend';
 
 export type DataSource = 'live' | 'mock';
 
@@ -79,4 +79,9 @@ export async function generateDraftReport(caseId: string): Promise<DraftReport> 
 export async function getEvaluation(): Promise<Evaluation | null> {
   if (DATA_SOURCE === 'live') return fetchMetrics();
   return null;
+}
+
+/** Which dataset the live backend actually loaded (it may be a synthetic fallback). */
+export async function getLoadedDataset(): Promise<LoadedDataset | null> {
+  return DATA_SOURCE === 'live' ? fetchLoadedDataset() : null;
 }

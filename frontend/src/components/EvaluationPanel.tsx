@@ -72,18 +72,18 @@ export function EvaluationPanel() {
   const metrics: Metric[] = e
     ? [
         {
-          label: 'Precision (transactions)',
+          label: 'Precision: case transactions labelled laundering',
           numerator: e.truePositiveTransactions,
           denominator: e.flaggedTransactions,
           reported: e.precision,
-          definition: 'Transactions in any case, contextual ones included, that are labelled laundering.',
+          definition: 'Transaction coverage across all case transactions, including contextual ones (not only flagged transfers).',
         },
         {
-          label: 'Recall (transactions)',
+          label: 'Recall: labelled laundering covered by cases',
           numerator: e.truePositiveTransactions,
           denominator: e.labelledLaundering,
           reported: e.recall,
-          definition: 'Labelled laundering transactions in the sample that appear in any case.',
+          definition: 'Labelled laundering transactions in the sample that appear anywhere in a case, including as contextual transfers.',
         },
         {
           label: 'Labelled schemes found',

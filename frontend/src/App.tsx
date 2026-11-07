@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DATA_SOURCE, generateDraftReport, getCase, listCases } from './data/api';
+import { DATA_SOURCE, generateDraftReport, getCase, getLoadedDataset, listCases } from './data/api';
 import type { CaseDetail, CaseSummary, DraftReport } from './data/types';
 import { errorMessage, type AsyncState } from './lib/async';
 import { buildCaseStory } from './lib/caseStory';
@@ -21,6 +21,18 @@ export default function App() {
   const [showContext, setShowContext] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reports, setReports] = useState<Record<string, AsyncState<DraftReport>>>({});
+  const [datasetLabel, setDatasetLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    getLoadedDataset()
+      .then((d) => {
+        if (!d) return;
+        if (d.source === 'ibm') setDatasetLabel('IBM AML sample (simulated by IBM)');
+        else if (d.source === 'synthetic') setDatasetLabel(d.fallback ? 'Generated synthetic data (IBM data unavailable)' : 'Generated synthetic data');
+        else setDatasetLabel('Dataset not reported by backend');
+      })
+      .catch(() => setDatasetLabel('Dataset unknown (backend unreachable)'));
+  }, []);
 
   const loadCases = useCallback(() => {
     setCases({ status: 'loading' });
@@ -112,7 +124,7 @@ export default function App() {
             </span>
           ) : (
             <span className="demo-badge live-badge" title="Cases, transfers and reports come from the MuleRadar backend API">
-              Live backend
+              Live backend{datasetLabel ? ` · ${datasetLabel}` : ''}
             </span>
           )}
           <a className="source-link" href={DATA_SOURCE === 'mock' ? '?source=live' : '?source=mock'}>
