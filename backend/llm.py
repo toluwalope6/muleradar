@@ -161,9 +161,15 @@ def answer_question(case: dict, question: str) -> str:
 
 
 def draft_report(case: dict) -> str:
+    return draft_report_with_source(case)[0]
+
+
+def draft_report_with_source(case: dict) -> tuple[str, str]:
+    """Returns (markdown, generated_by) where generated_by is "template", "openai" or "anthropic"."""
     prompt = (
         f"Case JSON:\n{_context(case)}\n\nDraft a Suspicious Activity Report in Markdown with sections: "
         "Summary, Subjects (accounts and roles), Description of activity (include a timeline table), "
         "Red-flag indicators, Recommended actions. Mark it as a DRAFT requiring analyst review."
     )
-    return _call_llm(prompt, max_tokens=1500) or template_report(case)
+    text = _call_llm(prompt, max_tokens=1500)
+    return (text, _provider() or "template") if text else (template_report(case), "template")

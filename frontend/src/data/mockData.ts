@@ -7,12 +7,11 @@ import type {
   ExplanationPoint,
   Indicator,
   IndicatorType,
-  Priority,
   ScoreComponent,
   Transaction,
 } from './types';
 import { formatDate, formatDateTime, formatDuration, formatMoney, formatPercent, hoursBetween } from '../lib/format';
-import { INDICATOR_LABELS } from '../lib/indicators';
+import { INDICATOR_LABELS, priorityForScore as priorityFor } from '../lib/indicators';
 
 const CURRENCY = 'EUR';
 const NEAR_THRESHOLD_REFERENCE = 10_000;
@@ -155,19 +154,14 @@ function nearThreshold(txs: Transaction[]): Indicator {
 }
 
 function newAccount(acc: Account, firstTx: Transaction): Indicator {
-  const days = Math.floor(hoursBetween(acc.openedOn, firstTx.timestamp) / 24);
+  const openedOn = acc.openedOn ?? firstTx.timestamp;
+  const days = Math.floor(hoursBetween(openedOn, firstTx.timestamp) / 24);
   return indicator('new_account', [
     {
-      text: `${acc.id} was opened on ${formatDate(acc.openedOn)}, ${days} days before its first flagged transfer (${firstTx.id}).`,
+      text: `${acc.id} was opened on ${formatDate(openedOn)}, ${days} days before its first flagged transfer (${firstTx.id}).`,
       transactionIds: [firstTx.id],
     },
   ]);
-}
-
-function priorityFor(score: number): Priority {
-  if (score >= 60) return 'high';
-  if (score >= 45) return 'medium';
-  return 'low';
 }
 
 interface CaseDraft {

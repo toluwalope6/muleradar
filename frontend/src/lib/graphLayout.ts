@@ -41,16 +41,20 @@ export function computeLayout(c: CaseDetail, includeContext: boolean): Record<st
       placements[id] = { x: radius * Math.cos(angle), y: radius * Math.sin(angle), side: sideForAngle(angle) };
     });
     const extras = c.accounts.filter((a) => !placements[a.id] && (includeContext || !contextIds.has(a.id)));
-    const perAnchor = new Map<string, number>();
-    for (const a of extras) {
-      const n = neighbourOf(a.id);
-      const anchor = n && angles[n.other] !== undefined ? n.other : ring[0];
-      const k = perAnchor.get(anchor) ?? 0;
-      perAnchor.set(anchor, k + 1);
-      const angle = angles[anchor] - 0.45 - 0.35 * k;
-      const r = radius + 190;
-      placements[a.id] = { x: r * Math.cos(angle), y: r * Math.sin(angle), side: sideForAngle(angle) };
-    }
+    // Outer ring: each extra starts near the ring account it trades with, then is pushed apart evenly.
+    const r = Math.max(radius + 190, (extras.length * 170) / (2 * Math.PI));
+    const minGap = Math.min((2 * Math.PI) / Math.max(extras.length, 1), 170 / r);
+    const wanted = extras
+      .map((a) => {
+        const n = neighbourOf(a.id);
+        const anchor = n && angles[n.other] !== undefined ? n.other : ring[0];
+        return { id: a.id, angle: angles[anchor] - 0.45 };
+      })
+      .sort((x, y) => x.angle - y.angle || x.id.localeCompare(y.id));
+    wanted.forEach((w, i) => {
+      if (i > 0) w.angle = Math.max(w.angle, wanted[i - 1].angle + minGap);
+      placements[w.id] = { x: r * Math.cos(w.angle), y: r * Math.sin(w.angle), side: sideForAngle(w.angle) };
+    });
     return placements;
   }
 

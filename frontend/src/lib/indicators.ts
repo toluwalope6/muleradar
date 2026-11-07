@@ -29,3 +29,9 @@ export const PRIORITY_SHORT: Record<Priority, string> = {
   medium: 'Medium',
   low: 'Low',
 };
+
+export function priorityForScore(score: number): Priority {
+  if (score >= 60) return 'high';
+  if (score >= 45) return 'medium';
+  return 'low';
+}

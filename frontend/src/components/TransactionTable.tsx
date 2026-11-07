@@ -14,6 +14,7 @@ export function TransactionTable({ caseDetail, selection, onSelect }: Props) {
   const rows = [...caseDetail.transactions].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const flagged = rows.filter((t) => t.isEvidence).length;
   const context = rows.length - flagged;
+  const hasReferences = rows.some((t) => t.reference);
   return (
     <details className="section-details">
       <summary>
@@ -30,7 +31,7 @@ export function TransactionTable({ caseDetail, selection, onSelect }: Props) {
             <th>From</th>
             <th>To</th>
             <th className="num">Amount</th>
-            <th>Reference</th>
+            <th>{hasReferences ? 'Reference' : 'Backend note'}</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -53,7 +54,7 @@ export function TransactionTable({ caseDetail, selection, onSelect }: Props) {
                   {labels[t.to]} <span className="mono dim">{t.to}</span>
                 </td>
                 <td className="num mono">{formatMoneyWhole(t.amount, t.currency)}</td>
-                <td className="muted">{t.reference}</td>
+                <td className="muted">{(hasReferences ? t.reference : t.note) ?? '—'}</td>
                 <td>{t.isEvidence ? <span className="status-flagged">Flagged</span> : <span className="dim">Contextual</span>}</td>
               </tr>
             );

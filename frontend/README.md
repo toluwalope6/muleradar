@@ -45,3 +45,10 @@ To show the loading, empty and error states, add a query parameter to the URL:
 
 Scores come from transparent sample weights in `mockData.ts`. They are not model outputs, and no precision or
 recall figures are shown.
+
+## Live backend vs synthetic demo
+
+- **Live (default):** start the backend (`./backend/run.sh`, API on `http://127.0.0.1:8000`), then `npm run dev`.
+  The Vite dev/preview server proxies `/api/*` to the backend (`MULERADAR_API_URL` overrides the target), so no CORS setup is needed in the browser.
+- **Synthetic demo:** open `?source=mock` (or set `VITE_DATA_SOURCE=mock`). The header shows which source is active, with a link to switch.
+- Live failures are shown as errors; the app never falls back to mock data. See `.env.example` for settings. No credentials are used by the frontend.

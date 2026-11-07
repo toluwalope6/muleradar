@@ -27,7 +27,11 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
   const facts = useMemo(() => caseFacts(caseDetail), [caseDetail]);
   const panelOpen = selection !== null;
   const hiddenContextCount = facts.contextTransfers.length;
-  const showAllAmounts = facts.flaggedTransfers.length + (showContext ? facts.contextTransfers.length : 0) <= ALWAYS_SHOW_AMOUNTS_UP_TO;
+  const visibleTransfers = showContext ? caseDetail.transactions : facts.flaggedTransfers;
+  const degree = new Map<string, number>();
+  for (const t of visibleTransfers) for (const id of [t.from, t.to]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  // Amount labels on edges that meet at one account would collide, so those show on hover instead.
+  const showAllAmounts = visibleTransfers.length <= ALWAYS_SHOW_AMOUNTS_UP_TO && Math.max(0, ...degree.values()) <= 2;
 
   useEffect(() => {
     if (!containerRef.current) return;

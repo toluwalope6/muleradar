@@ -314,7 +314,7 @@ def build_timeline(tx: pd.DataFrame, roles: dict[str, str], scheme_type: str) ->
         if lo <= amt < hi:
             desc += " [just under 10k reporting threshold]"
         received[t].append((ts, amt))
-        steps.append({"step": step, "timestamp": ts.isoformat(), "from": s, "to": t,
+        steps.append({"step": step, "tx_id": row.tx_id, "timestamp": ts.isoformat(), "from": s, "to": t,
                       "amount": round(amt, 2), "description": desc})
     return steps
 
@@ -443,18 +443,29 @@ def run_detection(df: pd.DataFrame, ground_truth: list[dict] | None) -> Results:
 def case_summary(c: Case) -> dict:
     return {"id": c.id, "risk_score": c.risk_score, "scheme_type": c.scheme_type,
             "account_count": len(c.nodes), "total_amount": round(float(c.tx["amount"].sum()), 2),
-            "duration_hours": duration_hours(c.tx), "summary": c.summary}
+            "duration_hours": duration_hours(c.tx), "summary": c.summary,
+            "currency": _currency(c.tx)}
+
+
+def _currency(tx: pd.DataFrame) -> str:
+    currencies = tx["currency"].dropna().unique()
+    return str(currencies[0]) if len(currencies) == 1 else "MIXED"
 
 
 def case_detail(c: Case) -> dict:
+    evidence = {t for h in c.hits for t in h.tx_ids}
     return {
         "id": c.id, "risk_score": c.risk_score, "scheme_type": c.scheme_type, "summary": c.summary,
         "nodes": c.nodes,
-        "edges": [{"source": r.from_account, "target": r.to_account, "amount": round(float(r.amount), 2),
-                   "timestamp": r.timestamp.isoformat()}
+        "edges": [{"tx_id": r.tx_id, "source": r.from_account, "target": r.to_account,
+                   "amount": round(float(r.amount), 2), "currency": r.currency,
+                   "timestamp": r.timestamp.isoformat(), "flagged": r.tx_id in evidence}
                   for r in c.tx.sort_values("timestamp").itertuples(index=False)],
         "timeline": c.timeline,
         "ground_truth": c.ground_truth,
         "match_score": c.match_score,
         "type_correct": c.type_correct,
+        "currency": _currency(c.tx),
+        "indicators": [{"detector": h.detector, "reason": h.reason, "accounts": h.accounts,
+                        "tx_ids": sorted(h.tx_ids)} for h in c.hits],
     }

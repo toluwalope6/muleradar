@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { generateDraftReport, getCase, listCases } from './data/api';
+import { DATA_SOURCE, generateDraftReport, getCase, listCases } from './data/api';
 import type { CaseDetail, CaseSummary, DraftReport } from './data/types';
 import { errorMessage, type AsyncState } from './lib/async';
 import { buildCaseStory } from './lib/caseStory';
@@ -105,9 +105,20 @@ export default function App() {
           </span>
           <span className="brand-name">MuleRadar</span>
         </div>
-        <span className="demo-badge" title="All accounts, transfers and amounts are fictional">
-          Synthetic demo data
-        </span>
+        <div className="source-switch">
+          {DATA_SOURCE === 'mock' ? (
+            <span className="demo-badge" title="All accounts, transfers and amounts are fictional">
+              Synthetic demo data
+            </span>
+          ) : (
+            <span className="demo-badge live-badge" title="Cases, transfers and reports come from the MuleRadar backend API">
+              Live backend
+            </span>
+          )}
+          <a className="source-link" href={DATA_SOURCE === 'mock' ? '?source=live' : '?source=mock'}>
+            {DATA_SOURCE === 'mock' ? 'Switch to live backend' : 'Switch to synthetic demo'}
+          </a>
+        </div>
       </header>
 
       <div className="shell">

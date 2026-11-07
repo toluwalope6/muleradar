@@ -1,6 +1,7 @@
 """MuleRadar API. Run from this directory: uvicorn main:app --reload"""
 from __future__ import annotations
 
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 
 from data import build_dataset
 from detect import Results, case_detail, case_summary, run_detection
-from llm import answer_question, draft_report
+from llm import answer_question, draft_report_with_source
 
 STATE: dict[str, Results] = {}
 
@@ -34,7 +35,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="MuleRadar", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=os.getenv(
+        "MULERADAR_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173",
+    ).split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,4 +77,5 @@ def ask(case_id: str, body: AskBody):
 
 @app.post("/cases/{case_id}/report")
 def report(case_id: str):
-    return {"report": draft_report(case_detail(_case(case_id)))}
+    text, generated_by = draft_report_with_source(case_detail(_case(case_id)))
+    return {"report": text, "generated_by": generated_by}

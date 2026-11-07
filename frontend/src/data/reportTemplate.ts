@@ -1,10 +1,10 @@
 // Template-based draft report built only from the selected case's data. No AI service is involved.
-import type { CaseDetail, DraftReport } from './types';
+import type { CaseDetail, TemplateReport } from './types';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { ROLE_LABELS } from '../lib/indicators';
 import { buildCaseStory } from '../lib/caseStory';
 
-export function buildDraftReport(c: CaseDetail): DraftReport {
+export function buildDraftReport(c: CaseDetail): TemplateReport {
   const evidence = c.transactions.filter((t) => t.isEvidence);
   const money = (n: number) => formatMoney(n, c.currency);
   const patternAccounts = c.accounts.filter((a) => a.role !== 'context');
@@ -13,6 +13,7 @@ export function buildDraftReport(c: CaseDetail): DraftReport {
   return {
     caseId: c.id,
     generatedAt: new Date().toISOString(),
+    kind: 'sections',
     method: 'template',
     evidenceTransactionIds: evidence.map((t) => t.id),
     sections: [

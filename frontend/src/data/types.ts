@@ -1,5 +1,6 @@
-// Provisional frontend types for the mock data layer.
-// These are NOT an agreed backend contract; map backend responses onto them in src/data/api.ts.
+// Frontend view model shared by the synthetic mock data and the live backend.
+// Backend responses are mapped onto these types in src/data/backend.ts; fields the backend does not
+// provide are optional rather than filled in.
 
 export type IndicatorType =
   | 'circular_flow'
@@ -16,10 +17,13 @@ export type Priority = 'high' | 'medium' | 'low';
 export interface Account {
   id: string;
   label: string;
-  accountType: 'personal' | 'business';
-  country: string;
-  openedOn: string;
+  accountType?: 'personal' | 'business';
+  country?: string;
+  openedOn?: string;
   role: AccountRole;
+  /** Role and account score exactly as returned by the backend (live mode only). */
+  backendRole?: string;
+  backendRiskScore?: number;
 }
 
 export interface Transaction {
@@ -29,7 +33,9 @@ export interface Transaction {
   to: string;
   amount: number;
   currency: string;
-  reference: string;
+  reference?: string;
+  /** Backend timeline description for this transfer (live mode only). */
+  note?: string;
   isEvidence: boolean;
 }
 
@@ -58,14 +64,28 @@ export interface CaseSummary {
   priority: Priority;
   indicatorTypes: IndicatorType[];
   accountCount: number;
-  evidenceTransactionCount: number;
-  evidenceVolume: number;
+  evidenceTransactionCount?: number;
+  evidenceVolume?: number;
   currency: string;
-  windowStart: string;
-  windowEnd: string;
+  windowStart?: string;
+  windowEnd?: string;
+}
+
+export interface GroundTruthMatch {
+  schemeType: string;
+  matchScore: number;
+  typeCorrect: boolean | null;
 }
 
 export interface CaseDetail extends CaseSummary {
+  evidenceTransactionCount: number;
+  evidenceVolume: number;
+  windowStart: string;
+  windowEnd: string;
+  /** Backend scheme type and summary, shown verbatim (live mode only). */
+  schemeType?: string;
+  backendSummary?: string;
+  groundTruth?: GroundTruthMatch | null;
   accounts: Account[];
   transactions: Transaction[];
   indicators: Indicator[];
@@ -77,10 +97,23 @@ export interface ReportSection {
   paragraphs: string[];
 }
 
-export interface DraftReport {
+export interface TemplateReport {
+  kind: 'sections';
   caseId: string;
   generatedAt: string;
   method: 'template';
   sections: ReportSection[];
   evidenceTransactionIds: string[];
 }
+
+/** Markdown report returned by the backend's POST /cases/{id}/report. */
+export interface BackendReport {
+  kind: 'markdown';
+  caseId: string;
+  generatedAt: string;
+  /** "template", or the AI provider the backend used (e.g. "openai", "anthropic"). */
+  generatedBy: string;
+  markdown: string;
+}
+
+export type DraftReport = TemplateReport | BackendReport;

@@ -3,7 +3,7 @@ const moneyFormatters = new Map<string, Intl.NumberFormat>();
 export function formatMoney(amount: number, currency: string): string {
   let f = moneyFormatters.get(currency);
   if (!f) {
-    f = new Intl.NumberFormat('en-IE', { style: 'currency', currency, minimumFractionDigits: 2 });
+    f = new Intl.NumberFormat('en-IE', { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2 });
     moneyFormatters.set(currency, f);
   }
   return f.format(amount);
@@ -15,7 +15,7 @@ export function formatMoneyWhole(amount: number, currency: string): string {
   if (!Number.isInteger(amount)) return formatMoney(amount, currency);
   let f = wholeFormatters.get(currency);
   if (!f) {
-    f = new Intl.NumberFormat('en-IE', { style: 'currency', currency, maximumFractionDigits: 0 });
+    f = new Intl.NumberFormat('en-IE', { style: 'currency', currency, currencyDisplay: 'narrowSymbol', maximumFractionDigits: 0 });
     wholeFormatters.set(currency, f);
   }
   return f.format(amount);

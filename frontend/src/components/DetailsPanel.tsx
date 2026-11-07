@@ -54,8 +54,18 @@ export function DetailsPanel({ caseDetail: c, selection, onSelect }: Props) {
           </dd>
           <dt>When</dt>
           <dd>{formatDateTime(t.timestamp)}</dd>
-          <dt>Reference</dt>
-          <dd>“{t.reference}”</dd>
+          {t.reference && (
+            <>
+              <dt>Reference</dt>
+              <dd>“{t.reference}”</dd>
+            </>
+          )}
+          {t.note && (
+            <>
+              <dt>Backend note</dt>
+              <dd>{t.note}</dd>
+            </>
+          )}
           {rules.length > 0 && (
             <>
               <dt>Matched</dt>
@@ -100,12 +110,30 @@ export function DetailsPanel({ caseDetail: c, selection, onSelect }: Props) {
         {close}
       </header>
       <dl className="kv">
-        <dt>Type</dt>
-        <dd>
-          {a.accountType === 'business' ? 'Business' : 'Personal'} · {a.country}
-        </dd>
-        <dt>Opened</dt>
-        <dd>{formatDate(a.openedOn)}</dd>
+        {a.accountType && (
+          <>
+            <dt>Type</dt>
+            <dd>
+              {a.accountType === 'business' ? 'Business' : 'Personal'}
+              {a.country ? ` · ${a.country}` : ''}
+            </dd>
+          </>
+        )}
+        {a.openedOn && (
+          <>
+            <dt>Opened</dt>
+            <dd>{formatDate(a.openedOn)}</dd>
+          </>
+        )}
+        {a.backendRole && (
+          <>
+            <dt>Backend role</dt>
+            <dd>
+              {a.backendRole}
+              {a.backendRiskScore !== undefined ? ` · account score ${a.backendRiskScore}/100` : ''}
+            </dd>
+          </>
+        )}
         <dt>In this case</dt>
         <dd>
           {money(total(incoming))} in · {money(total(outgoing))} out

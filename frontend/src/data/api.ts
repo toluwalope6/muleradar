@@ -1,12 +1,24 @@
-// Data-access layer. Today it serves synthetic mock data; replace these function bodies with
-// fetch calls to the backend API later, keeping the same signatures for the UI.
+// Data-access layer used by the UI. Two explicitly selected sources:
+//   live (default): the MuleRadar backend API, see ./backend.ts
+//   mock: bundled synthetic demo cases
+// Select with ?source=live|mock or VITE_DATA_SOURCE. A failed live request is shown as an error;
+// it never falls back to mock data.
 //
-// Demo state switches via the URL: ?mock=empty | error | case-error | report-error
+// Mock demo states via the URL: ?mock=empty | error | case-error | report-error (implies mock source)
 import type { CaseDetail, CaseSummary, DraftReport } from './types';
 import { MOCK_CASES } from './mockData';
 import { buildDraftReport } from './reportTemplate';
+import { fetchCase, fetchCases, fetchReport } from './backend';
 
-export const DATA_SOURCE_LABEL = 'Demo — synthetic data';
+export type DataSource = 'live' | 'mock';
+
+function selectSource(): DataSource {
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get('source') ?? (params.has('mock') ? 'mock' : null) ?? import.meta.env.VITE_DATA_SOURCE;
+  return requested === 'mock' ? 'mock' : 'live';
+}
+
+export const DATA_SOURCE: DataSource = selectSource();
 
 type MockScenario = 'default' | 'empty' | 'error' | 'case-error' | 'report-error';
 
@@ -41,6 +53,7 @@ function findCase(caseId: string): CaseDetail {
 }
 
 export async function listCases(): Promise<CaseSummary[]> {
+  if (DATA_SOURCE === 'live') return fetchCases();
   await delay(600);
   const mode = scenario();
   if (mode === 'error') throw new Error('The case list could not be loaded (simulated error).');
@@ -49,12 +62,14 @@ export async function listCases(): Promise<CaseSummary[]> {
 }
 
 export async function getCase(caseId: string): Promise<CaseDetail> {
+  if (DATA_SOURCE === 'live') return fetchCase(caseId);
   await delay(400);
   if (scenario() === 'case-error') throw new Error(`Case ${caseId} could not be loaded (simulated error).`);
   return findCase(caseId);
 }
 
 export async function generateDraftReport(caseId: string): Promise<DraftReport> {
+  if (DATA_SOURCE === 'live') return fetchReport(caseId);
   await delay(900);
   if (scenario() === 'report-error') throw new Error('The draft report could not be generated (simulated error).');
   return buildDraftReport(findCase(caseId));

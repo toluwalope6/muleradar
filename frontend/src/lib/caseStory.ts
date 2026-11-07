@@ -54,9 +54,14 @@ export function caseFacts(c: CaseDetail): CaseFacts {
   };
 }
 
-/** Follows flagged transfers from the origin account until funds return to it. */
+/** Follows a circular-flow indicator's transfers (or all flagged transfers) until funds return to their start. */
 export function findCycle(c: CaseDetail): Transaction[] | null {
   if (!c.indicatorTypes.includes('circular_flow')) return null;
+  for (const point of c.indicators.find((i) => i.type === 'circular_flow')?.points ?? []) {
+    const hops = byTime(c.transactions.filter((t) => point.transactionIds.includes(t.id)));
+    const closes = hops.length >= 2 && hops.every((h, i) => i === 0 || hops[i - 1].to === h.from) && hops[hops.length - 1].to === hops[0].from;
+    if (closes) return hops;
+  }
   const flagged = caseFacts(c).flaggedTransfers;
   if (flagged.length === 0) return null;
   const start = c.accounts.find((a) => a.role === 'origin')?.id ?? flagged[0].from;
@@ -103,7 +108,7 @@ function circularStory(c: CaseDetail, hops: Transaction[]): CaseStory {
   const ratios = hops.slice(1).map((h, i) => h.amount / hops[i].amount);
   const minRatio = formatPercent(Math.min(...ratios));
   const maxRatio = formatPercent(Math.max(...ratios));
-  const references = hops.map((h) => h.reference);
+  const references = hops.map((h) => h.reference).filter((r): r is string => Boolean(r));
 
   const whyReview: StoryPoint[] = [
     {
@@ -119,7 +124,7 @@ function circularStory(c: CaseDetail, hops: Transaction[]): CaseStory {
       transactionIds: ids(hops),
     },
   ];
-  if (new Set(references).size === references.length && hops.length >= 3) {
+  if (references.length === hops.length && new Set(references).size === references.length && hops.length >= 3) {
     whyReview.push({
       title: 'Each step has a different payment reference',
       text: references.map((r) => `“${r}”`).join(', ') + ', while the amount stays almost the same.',
@@ -157,8 +162,8 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
   const onward = inSum > 0 ? formatPercent(outSum / inSum) : null;
   const onwardTime = lastIn && lastOut ? formatDuration(lastIn.timestamp, lastOut.timestamp) : null;
   const hubAccount = c.accounts.find((a) => a.id === hub);
-  const ageDays =
-    hubAccount && inflows[0] ? Math.floor(hoursBetween(hubAccount.openedOn, inflows[0].timestamp) / 24) : null;
+  const openedOn = hubAccount?.openedOn;
+  const ageDays = openedOn && inflows[0] ? Math.floor(hoursBetween(openedOn, inflows[0].timestamp) / 24) : null;
 
   const whatHappened: string[] = [];
   if (inflows.length > 1) {
@@ -167,6 +172,12 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
     );
   } else if (lastIn) {
     whatHappened.push(`${hub} received ${money(lastIn.amount)} from ${lastIn.from} on ${formatDateTime(lastIn.timestamp)}.`);
+  }
+  if (inflows.length === 0 && outflows.length > 0) {
+    whatHappened.push(
+      `${hub} sent ${plural(outflows.length, 'payment')} totalling ${money(outSum)} to ${plural(recipients, 'account')} over ${formatDuration(outflows[0].timestamp, lastOut.timestamp)}, starting ${formatDate(outflows[0].timestamp)}.`,
+      'No flagged incoming payment to this account appears in the case.',
+    );
   }
   if (outflows.length > 0 && onward && onwardTime) {
     whatHappened.push(
@@ -177,7 +188,7 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
   const whyReview: StoryPoint[] = [];
   if (onward && onwardTime) {
     whyReview.push({
-      title: 'Most of the incoming amount was paid out quickly',
+      title: outSum > inSum ? 'It paid out more than its flagged incoming payments' : 'Most of the incoming amount was paid out quickly',
       text: `Outgoing payments of ${money(outSum)} equal ${onward} of the ${money(inSum)} received; the last one left within ${onwardTime} of the ${
         inflows.length > 1 ? 'final incoming payment' : 'payment arriving'
       }.`,
@@ -194,14 +205,14 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
       transactionIds: ids(inflows),
     });
   }
-  if (c.indicatorTypes.includes('new_account') && hubAccount && ageDays !== null) {
+  if (c.indicatorTypes.includes('new_account') && openedOn && ageDays !== null) {
     whyReview.push({
       title: 'The receiving account was new',
-      text: `${hub} was opened on ${formatDate(hubAccount.openedOn)}, ${plural(ageDays, 'day')} before the first payment arrived.`,
+      text: `${hub} was opened on ${formatDate(openedOn)}, ${plural(ageDays, 'day')} before the first payment arrived.`,
       transactionIds: inflows[0] ? [inflows[0].id] : [],
     });
   }
-  if (recipients >= 3) {
+  if (recipients >= 3 && outflows.length > 0) {
     const amounts = outflows.map((t) => t.amount);
     whyReview.push({
       title: `Split across ${recipients} recipients in similar amounts`,
@@ -211,12 +222,19 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
   }
 
   const headline =
-    outflows.length > 0
+    inflows.length === 0
+      ? `${money(outSum)} out to ${countWords(recipients, 'account')}`
+      : outflows.length > 0
       ? `${money(inSum)} in from ${countWords(senders, 'account')}; ${money(outSum)} out to ${countWords(recipients, 'account')}`
       : `${money(inSum)} in from ${countWords(senders, 'account')}`;
-  const amounts: AmountFact[] = [
-    { label: `Incoming to ${hub}`, value: inSum, note: `${plural(inflows.length, 'flagged payment')} from ${plural(senders, 'account')}` },
-  ];
+  for (const point of detectorPoints(c)) {
+    if (whyReview.length >= 2) break;
+    whyReview.push(point);
+  }
+  const amounts: AmountFact[] = [];
+  if (inflows.length > 0) {
+    amounts.push({ label: `Incoming to ${hub}`, value: inSum, note: `${plural(inflows.length, 'flagged payment')} from ${plural(senders, 'account')}` });
+  }
   if (outflows.length > 0) {
     amounts.push({ label: `Outgoing from ${hub}`, value: outSum, note: `${plural(outflows.length, 'flagged payment')} to ${plural(recipients, 'account')}` });
   }
@@ -232,6 +250,11 @@ function collectDistributeStory(c: CaseDetail, hub: string, flagged: Transaction
         : 'Quickly dividing one large payment between several accounts can be a way to break funds into smaller amounts. It can also have ordinary explanations, such as paying contractors.',
     whyReview: whyReview.slice(0, 3),
   };
+}
+
+/** Detector findings as review points, used when the transfer pattern alone gives fewer than two. */
+function detectorPoints(c: CaseDetail): StoryPoint[] {
+  return c.indicators.flatMap((i) => i.points.slice(0, 1).map((p) => ({ title: i.title, text: p.text, transactionIds: p.transactionIds })));
 }
 
 export function buildCaseStory(c: CaseDetail): CaseStory {
