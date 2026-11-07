@@ -248,8 +248,10 @@ ul, ol { margin: 0; }
 .evaluation { margin: 0 12px 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 14px; }
 .evaluation summary { cursor: pointer; color: var(--text); font-weight: 600; }
 .evaluation .small { font-size: 14px; line-height: 1.45; margin-top: 8px; }
-.eval-grid { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-.eval-grid > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.eval-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.eval-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.eval-count { font-family: var(--mono); font-size: 14px; color: var(--text); }
+.eval-def { font-size: 14px; color: var(--muted); line-height: 1.4; }
 .eval-grid dt { font-size: 14px; color: var(--muted); }
 .eval-grid dd { font-size: 16px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .error-text { color: #fca5a5; }

@@ -128,4 +128,10 @@ export interface Evaluation {
   transactions?: number;
   labelledLaundering?: number;
   flaggedTransactions?: number;
+  truePositiveTransactions?: number;
+  schemesTypeCorrect?: number;
+  schemeMatchThreshold?: number;
+  launderingInSchemes?: number;
+  /** "ibm" or "synthetic", as reported by the backend. */
+  dataset?: string | null;
 }

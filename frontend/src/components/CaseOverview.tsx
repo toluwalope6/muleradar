@@ -95,7 +95,7 @@ export function CaseReview({ caseDetail: c, story, selection, onSelect }: Review
               <div className="tech-rule">
                 <h3>Backend summary{c.schemeType ? ` · scheme type ${c.schemeType}` : ''}</h3>
                 <p>{c.backendSummary}</p>
-                <p className="supporting">Shown as returned by the backend. Its “moved” total adds up every transfer in the case, including contextual ones, so it counts funds at each step.</p>
+                <p className="supporting">Shown as returned by the backend. Its total across transfers includes contextual transfers.</p>
               </div>
             )}
             {c.groundTruth !== undefined && (

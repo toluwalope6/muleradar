@@ -219,6 +219,11 @@ interface ApiMetrics {
   transactions?: number;
   labelled_laundering?: number;
   flagged_transactions?: number;
+  true_positive_transactions?: number;
+  schemes_type_correct?: number;
+  scheme_match_threshold?: number;
+  laundering_in_schemes?: number;
+  dataset?: string | null;
 }
 
 /** Returns null when the backend has no labelled data to evaluate against. */
@@ -234,5 +239,10 @@ export async function fetchMetrics(): Promise<Evaluation | null> {
     transactions: m.transactions,
     labelledLaundering: m.labelled_laundering,
     flaggedTransactions: m.flagged_transactions,
+    truePositiveTransactions: m.true_positive_transactions,
+    schemesTypeCorrect: m.schemes_type_correct,
+    schemeMatchThreshold: m.scheme_match_threshold,
+    launderingInSchemes: m.laundering_in_schemes,
+    dataset: m.dataset,
   };
 }
