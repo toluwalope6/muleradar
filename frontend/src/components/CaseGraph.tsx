@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import cytoscape from 'cytoscape';
 import type { CaseDetail } from '../data/types';
-import { accountShortLabels, caseFacts } from '../lib/caseStory';
+import { accountShortLabels, caseFacts, findCycle } from '../lib/caseStory';
 import { formatMoneyWhole } from '../lib/format';
 import { computeLayout } from '../lib/graphLayout';
 import type { Selection } from '../lib/selection';
@@ -38,7 +38,10 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
     const labels = accountShortLabels(caseDetail);
     const placements = computeLayout(caseDetail, showContext);
     const contextIds = new Set(facts.contextAccounts.map((a) => a.id));
-    const hubIds = new Set(caseDetail.accounts.filter((a) => a.role === 'collector' || a.role === 'origin').map((a) => a.id));
+    const cycle = findCycle(caseDetail);
+    const hubIds = new Set(
+      cycle ? [cycle[0].from] : caseDetail.accounts.filter((a) => a.role === 'collector' || a.role === 'origin').map((a) => a.id),
+    );
     const transfers = showContext ? caseDetail.transactions : facts.flaggedTransfers;
     const amounts = transfers.map((t) => t.amount);
     const minAmount = Math.min(...amounts);

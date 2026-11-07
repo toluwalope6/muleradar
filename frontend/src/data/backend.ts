@@ -106,8 +106,9 @@ const utc = (ts: string) => (/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts}Z`);
 
 const titleFor = (schemeType: string) => SCHEME_TITLES[schemeType] ?? schemeType;
 
-function roleFor(role: string, schemeType: string): AccountRole {
-  if (role === 'source') return schemeType === 'CYCLE' ? 'origin' : 'source';
+// The cycle's start is derived from the cited transfers (findCycle), so "source" is not mapped to "origin".
+function roleFor(role: string): AccountRole {
+  if (role === 'source') return 'source';
   if (role === 'mule') return 'intermediary';
   if (role === 'destination') return 'destination';
   return 'context';
@@ -146,7 +147,7 @@ export function mapDetail(d: ApiCaseDetail): CaseDetail {
   const accounts: Account[] = d.nodes.map((n) => ({
     id: n.id,
     label: n.id,
-    role: roleFor(n.role, d.scheme_type),
+    role: roleFor(n.role),
     backendRole: n.role,
     backendRiskScore: n.risk_score,
   }));
