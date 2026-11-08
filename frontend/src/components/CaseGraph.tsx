@@ -216,7 +216,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
     };
   }, [expanded]);
 
-  useEffect(() => setExpanded(false), [caseDetail.id]);
+  useEffect(() => setExpanded(false), [caseDetail.id, compact]);
 
   useEffect(() => {
     const cy = cyRef.current;
