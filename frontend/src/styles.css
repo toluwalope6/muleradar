@@ -351,3 +351,9 @@ ul, ol { margin: 0; }
   .modal-actions .btn { flex: 1 1 auto; padding: 8px 10px; }
   .graph-actions .toggle { flex-basis: 100%; }
 }
+
+@media (max-width: 1099px) {
+  .graph-stage { display: flex; flex-direction: column; }
+  .graph-canvas { position: relative; inset: auto; flex: 1; min-height: 0; }
+  .graph-hint { position: static; padding: 8px 12px 10px; margin: 0; }
+}
