@@ -12,15 +12,26 @@ export interface NodePlacement {
 
 const COLUMN_GAP = 320;
 const ROW_GAP = 96;
+// Narrow screens: layers become rows (money flows downwards), at most three accounts per row.
+const NARROW_PER_ROW = 2;
+const NARROW_COL_GAP = 280;
+// Narrow screens: loops with many accounts become a tall oval (down the left, up the right).
+const NARROW_RING_MAX = 6;
+const NARROW_LOOP_X = 130;
+const NARROW_LOOP_GAP = 120;
+const NARROW_EXTRA_X = 140;
+const NARROW_ROW_GAP = 110;
+const NARROW_LAYER_GAP = 70;
 
-function sideForAngle(angle: number): LabelSide {
+function sideForAngle(angle: number, narrow = false): LabelSide {
   const x = Math.cos(angle);
   const y = Math.sin(angle);
-  if (Math.abs(x) > Math.abs(y) * 1.4) return x > 0 ? 'right' : 'left';
+  // Narrow screens: labels above or below, so the loop can use the full width.
+  if (!narrow && Math.abs(x) > Math.abs(y) * 1.4) return x > 0 ? 'right' : 'left';
   return y > 0 ? 'bottom' : 'top';
 }
 
-export function computeLayout(c: CaseDetail, includeContext: boolean): Record<string, NodePlacement> {
+export function computeLayout(c: CaseDetail, includeContext: boolean, narrow = false): Record<string, NodePlacement> {
   const facts = caseFacts(c);
   const cycle = findCycle(c);
   const placements: Record<string, NodePlacement> = {};
@@ -31,6 +42,31 @@ export function computeLayout(c: CaseDetail, includeContext: boolean): Record<st
     return t ? { other: t.from === id ? t.to : t.from, sends: t.from === id } : null;
   };
 
+  const loopExtras = cycle ? c.accounts.filter((a) => !cycle.some((h) => h.from === a.id) && (includeContext || !contextIds.has(a.id))) : [];
+  if (cycle && narrow && (cycle.length > NARROW_RING_MAX || loopExtras.length > 0)) {
+    const ring = cycle.map((h) => h.from);
+    const down = Math.ceil(ring.length / 2);
+    const up = ring.length - down;
+    ring.forEach((id, i) => {
+      placements[id] =
+        i < down
+          ? { x: -NARROW_LOOP_X, y: i * NARROW_LOOP_GAP, side: 'left' }
+          : { x: NARROW_LOOP_X, y: (up - 1 - (i - down)) * NARROW_LOOP_GAP + ((down - up) * NARROW_LOOP_GAP) / 2, side: 'right' };
+    });
+    // Other accounts go in rows of two: those paying into the loop above it, the rest below.
+    const loopBottom = (down - 1) * NARROW_LOOP_GAP;
+    const ordered = [...loopExtras].sort((a, b) => a.id.localeCompare(b.id));
+    const above = ordered.filter((a) => neighbourOf(a.id)?.sends);
+    const below = ordered.filter((a) => !neighbourOf(a.id)?.sends);
+    const placeRows = (list: typeof ordered, startY: number, step: number) =>
+      list.forEach((a, i) => {
+        placements[a.id] = { x: i % 2 === 0 ? -NARROW_EXTRA_X : NARROW_EXTRA_X, y: startY + Math.floor(i / 2) * step, side: 'right' };
+      });
+    placeRows(above, -NARROW_LOOP_GAP * 1.6, -NARROW_LOOP_GAP);
+    placeRows(below, loopBottom + NARROW_LOOP_GAP * 1.6, NARROW_LOOP_GAP);
+    return placements;
+  }
+
   if (cycle) {
     const ring = cycle.map((h) => h.from);
     const radius = Math.max(150, 55 * ring.length);
@@ -38,7 +74,7 @@ export function computeLayout(c: CaseDetail, includeContext: boolean): Record<st
     ring.forEach((id, i) => {
       const angle = -Math.PI / 2 + (2 * Math.PI * i) / ring.length;
       angles[id] = angle;
-      placements[id] = { x: radius * Math.cos(angle), y: radius * Math.sin(angle), side: sideForAngle(angle) };
+      placements[id] = { x: radius * Math.cos(angle), y: radius * Math.sin(angle), side: sideForAngle(angle, narrow) };
     });
     const extras = c.accounts.filter((a) => !placements[a.id] && (includeContext || !contextIds.has(a.id)));
     // Outer ring: each extra starts near the ring account it trades with, then is pushed apart evenly.
@@ -79,6 +115,22 @@ export function computeLayout(c: CaseDetail, includeContext: boolean): Record<st
     contextColumns.set(col, [...(contextColumns.get(col) ?? []), a.id]);
   }
   const allCols = [...new Set([...columns.keys(), ...contextColumns.keys()])];
+  if (narrow) {
+    let y = 0;
+    for (const col of [...allCols].sort((a, b) => a - b)) {
+      const flaggedMembers = [...(columns.get(col) ?? [])].sort((a, b) => firstSeen(a).localeCompare(firstSeen(b)) || a.localeCompare(b));
+      const members = [...flaggedMembers, ...(contextColumns.get(col) ?? [])];
+      for (let start = 0; start < members.length; start += NARROW_PER_ROW) {
+        const row = members.slice(start, start + NARROW_PER_ROW);
+        row.forEach((id, i) => {
+          placements[id] = { x: (i - (row.length - 1) / 2) * NARROW_COL_GAP, y, side: 'right' };
+        });
+        y += NARROW_ROW_GAP;
+      }
+      y += NARROW_LAYER_GAP;
+    }
+    return placements;
+  }
   const minCol = Math.min(...allCols);
   const maxCol = Math.max(...allCols);
   const sideFor = (col: number): LabelSide => (col === minCol ? 'left' : col === maxCol ? 'right' : 'top');

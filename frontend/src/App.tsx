@@ -11,6 +11,8 @@ import { DetailsPanel } from './components/DetailsPanel';
 import { ReportModal } from './components/ReportModal';
 import { TransactionTable } from './components/TransactionTable';
 import { EmptyState, ErrorState, SkeletonLines } from './components/StateViews';
+import { PRIORITY_SHORT } from './lib/indicators';
+import { COMPACT_QUERY, useMediaQuery } from './lib/useMediaQuery';
 
 export default function App() {
   const [cases, setCases] = useState<AsyncState<CaseSummary[]>>({ status: 'idle' });
@@ -22,6 +24,25 @@ export default function App() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reports, setReports] = useState<Record<string, AsyncState<DraftReport>>>({});
   const [datasetLabel, setDatasetLabel] = useState<string | null>(null);
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerVisible = compact && drawerOpen;
+
+  useEffect(() => {
+    if (!drawerVisible) return;
+    document.body.classList.add('drawer-open');
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('drawer-open');
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [drawerVisible]);
+
+  const selectCase = useCallback((id: string) => {
+    setSelectedCaseId(id);
+    setDrawerOpen(false);
+  }, []);
 
   useEffect(() => {
     getLoadedDataset()
@@ -69,6 +90,7 @@ export default function App() {
   }, []);
 
   const detail = caseState.status === 'success' ? caseState.data : null;
+  const selectedSummary = cases.status === 'success' ? cases.data.find((c) => c.id === selectedCaseId) : undefined;
   const story = useMemo(() => (detail ? buildCaseStory(detail) : null), [detail]);
 
   const select = useCallback(
@@ -134,9 +156,34 @@ export default function App() {
       </header>
 
       <div className="shell">
-        <CaseList state={cases} selectedId={selectedCaseId} onSelect={setSelectedCaseId} onRetry={loadCases} />
+        <CaseList
+          state={cases}
+          selectedId={selectedCaseId}
+          onSelect={selectCase}
+          onRetry={loadCases}
+          drawerOpen={drawerVisible}
+          onClose={() => setDrawerOpen(false)}
+        />
+        {drawerVisible && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
 
         <main className="main">
+          {compact && (
+            <button type="button" className="case-picker" onClick={() => setDrawerOpen(true)} aria-expanded={drawerVisible}>
+              <span className="case-picker-label">
+                Select case <span aria-hidden>▾</span>
+              </span>
+              {selectedSummary && (
+                <span className="case-picker-current">
+                  <span className="case-item-title">{selectedSummary.title}</span>
+                  <span className="case-item-meta">
+                    <span className={`priority-badge priority-${selectedSummary.priority}`}>{PRIORITY_SHORT[selectedSummary.priority]}</span>
+                    <span>{selectedSummary.accountCount} accounts</span>
+                    <span className="mono dim">{selectedSummary.id}</span>
+                  </span>
+                </span>
+              )}
+            </button>
+          )}
           {cases.status === 'success' && cases.data.length === 0 && (
             <EmptyState title="Nothing to review" detail="When the sample rules flag a network, it will appear here." />
           )}
@@ -165,6 +212,7 @@ export default function App() {
                   onSelect={select}
                   showContext={showContext}
                   onToggleContext={toggleContext}
+                  compact={compact}
                   detailsPanel={selection && <DetailsPanel caseDetail={detail} selection={selection} onSelect={select} />}
                 />
               </section>

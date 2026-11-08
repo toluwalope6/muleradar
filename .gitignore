@@ -40,3 +40,4 @@ LI-*_patterns.txt
 *.log
 .DS_Store
 Thumbs.db
+.vercel

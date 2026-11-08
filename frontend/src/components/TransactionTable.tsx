@@ -23,6 +23,7 @@ export function TransactionTable({ caseDetail, selection, onSelect }: Props) {
           ({flagged} flagged{context > 0 ? `, ${context} contextual` : ''})
         </span>
       </summary>
+      <div className="table-scroll" role="region" aria-label="Transactions" tabIndex={0}>
       <table className="tx-table">
         <thead>
           <tr>
@@ -61,6 +62,7 @@ export function TransactionTable({ caseDetail, selection, onSelect }: Props) {
           })}
         </tbody>
       </table>
+      </div>
     </details>
   );
 }

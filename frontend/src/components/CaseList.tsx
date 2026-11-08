@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { CaseSummary } from '../data/types';
 import type { AsyncState } from '../lib/async';
 import { PRIORITY_SHORT } from '../lib/indicators';
@@ -9,14 +10,26 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onRetry: () => void;
+  /** Phone/tablet: the list is a drawer. */
+  drawerOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function CaseList({ state, selectedId, onSelect, onRetry }: Props) {
+export function CaseList({ state, selectedId, onSelect, onRetry, drawerOpen = false, onClose }: Props) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (drawerOpen) closeRef.current?.focus();
+  }, [drawerOpen]);
   return (
-    <nav className="sidebar" aria-label="Cases to review">
+    <nav className={`sidebar${drawerOpen ? ' is-open' : ''}`} aria-label="Cases to review">
       <div className="sidebar-head">
-        <h2>Cases to review</h2>
-        <p className="muted small">Ordered by review priority</p>
+        <div>
+          <h2>Cases to review</h2>
+          <p className="muted small">Ordered by review priority</p>
+        </div>
+        <button ref={closeRef} type="button" className="icon-btn drawer-close" aria-label="Close case list" onClick={onClose}>
+          ×
+        </button>
       </div>
       <EvaluationPanel />
       {(state.status === 'loading' || state.status === 'idle') && (
