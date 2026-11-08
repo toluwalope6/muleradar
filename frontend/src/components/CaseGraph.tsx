@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import cytoscape from 'cytoscape';
 import type { CaseDetail } from '../data/types';
 import { accountShortLabels, caseFacts, findCycle } from '../lib/caseStory';
@@ -13,13 +13,29 @@ interface Props {
   showContext: boolean;
   onToggleContext: (show: boolean) => void;
   detailsPanel: ReactNode;
+  /** Phone/tablet layout: vertical layers, tap-only hints, page scroll not captured until expanded. */
+  compact?: boolean;
 }
 
 const ALWAYS_SHOW_AMOUNTS_UP_TO = 5;
 const FONT = 'Inter, ui-sans-serif, system-ui, sans-serif';
 const COLORS = { flaggedNode: '#2dd4bf', hubNode: '#f5b94a', contextNode: '#475569', edge: '#2bb3a3', contextEdge: '#64748b' };
 
-export function CaseGraph({ caseDetail, selection, onSelect, showContext, onToggleContext, detailsPanel }: Props) {
+// On narrow screens always-on amounts can collide with account labels; then they show on tap instead.
+function hideClashingAmounts(cy: cytoscape.Core): boolean {
+  const box = { includeLabels: true, includeOverlays: false } as const;
+  const nodeBoxes = cy.nodes().map((n) => n.boundingBox(box));
+  const clash = cy.edges('.show-amount').some((e) => {
+    const b = e.boundingBox({ ...box, includeEdges: false });
+    return nodeBoxes.some((n) => b.x1 < n.x2 && n.x1 < b.x2 && b.y1 < n.y2 && n.y1 < b.y2);
+  });
+  if (clash) cy.edges().removeClass('show-amount');
+  return clash;
+}
+
+export function CaseGraph({ caseDetail, selection, onSelect, showContext, onToggleContext, detailsPanel, compact = false }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const [amountsCollide, setAmountsCollide] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -32,11 +48,19 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
   for (const t of visibleTransfers) for (const id of [t.from, t.to]) degree.set(id, (degree.get(id) ?? 0) + 1);
   // Amount labels on edges that meet at one account would collide, so those show on hover instead.
   const showAllAmounts = visibleTransfers.length <= ALWAYS_SHOW_AMOUNTS_UP_TO && Math.max(0, ...degree.values()) <= 2;
+  // Inline on narrow screens the graph area grows with the layout's aspect ratio, so it fits at a readable zoom.
+  const stageHeight = useMemo(() => {
+    if (!compact) return undefined;
+    const pts = Object.values(computeLayout(caseDetail, showContext, true));
+    const w = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x)) + 260;
+    const h = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y)) + 160;
+    return Math.round(Math.min(1000, window.innerHeight * 0.85, Math.max(360, ((window.innerWidth - 32) * h) / w)));
+  }, [compact, caseDetail, showContext]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const labels = accountShortLabels(caseDetail);
-    const placements = computeLayout(caseDetail, showContext);
+    const placements = computeLayout(caseDetail, showContext, compact);
     const contextIds = new Set(facts.contextAccounts.map((a) => a.id));
     const cycle = findCycle(caseDetail);
     const hubIds = new Set(
@@ -143,7 +167,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
       autounselectify: true,
       boxSelectionEnabled: false,
     });
-    cy.fit(undefined, 56);
+    cy.fit(undefined, compact ? 24 : 56);
 
     // Large cases fit at a small zoom; enlarge labels in graph units so they stay at least 12px on screen.
     const keepLabelsReadable = () => {
@@ -152,6 +176,8 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
     };
     keepLabelsReadable();
     cy.on('zoom', keepLabelsReadable);
+
+    setAmountsCollide(compact && showAllAmounts && hideClashingAmounts(cy));
 
     cy.on('tap', 'node', (e) => onSelectRef.current({ kind: 'account', id: e.target.id() }));
     cy.on('tap', 'edge', (e) => onSelectRef.current({ kind: 'transaction', id: e.target.id() }));
@@ -168,7 +194,29 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
       cy.destroy();
       cyRef.current = null;
     };
-  }, [caseDetail, facts, showContext, showAllAmounts]);
+  }, [caseDetail, facts, showContext, showAllAmounts, compact]);
+
+  // On touch layouts the inline graph leaves swipes to the page; pan and zoom are enabled in the expanded view.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    const interactive = !compact || expanded;
+    cy.userPanningEnabled(interactive);
+    cy.userZoomingEnabled(interactive);
+  }, [compact, expanded, caseDetail, showContext, showAllAmounts]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    document.body.classList.add('graph-expanded');
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setExpanded(false);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('graph-expanded');
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [expanded]);
+
+  useEffect(() => setExpanded(false), [caseDetail.id, compact]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -181,26 +229,27 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
       selection.kind === 'account' ? el.closedNeighborhood() : el.union(cy.$id(selection.id).connectedNodes());
     cy.elements().not(neighbourhood).addClass('dimmed');
     el.addClass('focused');
-    if (selection.kind === 'account') {
+    if (selection.kind === 'account' && !compact) {
       const edges = el.connectedEdges().addClass('related').not('.show-amount');
       edges.filter(`[target = "${selection.id}"]`).addClass('related-in');
       edges.filter(`[source = "${selection.id}"]`).addClass('related-out');
     }
-  }, [selection, caseDetail, showContext]);
+  }, [selection, caseDetail, showContext, compact]);
 
   // The canvas narrows while the details panel is open; refit so nothing hides behind it.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     cy.resize();
-    cy.fit(undefined, 56);
-  }, [panelOpen]);
+    cy.fit(undefined, compact ? 24 : 56);
+    if (compact && showAllAmounts && hideClashingAmounts(cy)) setAmountsCollide(true);
+  }, [panelOpen, expanded, stageHeight, compact, showAllAmounts]);
 
   const fit = () => cyRef.current?.animate({ fit: { eles: cyRef.current.elements(), padding: 56 } }, { duration: 250 });
   const resetLayout = () => {
     const cy = cyRef.current;
     if (!cy) return;
-    const placements = computeLayout(caseDetail, showContext);
+    const placements = computeLayout(caseDetail, showContext, compact);
     cy.nodes().forEach((n) => {
       const p = placements[n.id()];
       if (p) n.position({ x: p.x, y: p.y });
@@ -209,7 +258,7 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
   };
 
   return (
-    <div className="graph-card">
+    <div className={`graph-card${expanded ? ' is-expanded' : ''}`}>
       <div className="graph-bar">
         <div className="legend" aria-label="Legend">
           <span className="legend-item">
@@ -240,13 +289,23 @@ export function CaseGraph({ caseDetail, selection, onSelect, showContext, onTogg
           <button type="button" className="btn btn-quiet" onClick={resetLayout}>
             Reset layout
           </button>
+          {compact && (
+            <button type="button" className="btn btn-quiet" onClick={() => setExpanded((x) => !x)} aria-pressed={expanded}>
+              {expanded ? 'Exit full screen' : 'Expand graph'}
+            </button>
+          )}
         </div>
       </div>
-      <div className={`graph-body${panelOpen ? ' has-panel' : ''}`}>
+      <div className={`graph-body${panelOpen ? ' has-panel' : ''}`} style={stageHeight && !expanded ? { height: stageHeight } : undefined}>
         <div className="graph-stage">
           <div ref={containerRef} className="graph-canvas" aria-label="Directed graph of transfers between accounts" role="img" />
-          {!showAllAmounts && !panelOpen && <p className="graph-hint">Hover over a transfer to see its amount. Click an account or transfer for details.</p>}
-          {showAllAmounts && !panelOpen && <p className="graph-hint">Click an account or transfer for details.</p>}
+          {!panelOpen && (
+            <p className="graph-hint">
+              {compact
+                ? `${showAllAmounts && !amountsCollide ? '' : 'Tap a transfer to see its amount. '}Tap an account for details.${expanded ? ' Drag to pan, pinch to zoom.' : ''}`
+                : `${showAllAmounts ? '' : 'Hover over a transfer to see its amount. '}Click an account or transfer for details.`}
+            </p>
+          )}
         </div>
         {panelOpen && detailsPanel}
       </div>
